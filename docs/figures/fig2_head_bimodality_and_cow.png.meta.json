@@ -1,0 +1,19 @@
+{
+  "generating_script": "scripts/generate_phase2_artifacts.py",
+  "source_csvs": [
+    "bench/data/p2_head_sensitivity_map.csv",
+    "bench/data/p2_cow_prefix_memory.csv"
+  ],
+  "csv_hashes": [
+    "960d56927732cbc7d02299035c605187d255274354d5416957c4a3eda4052e4c",
+    "5ccc508421e8a2c35e132a8a7a02bf002b5c3cf327aad6ba5f16f30336c5c346"
+  ],
+  "width_px": 4469,
+  "height_px": 1468,
+  "dpi": 300,
+  "panels": [
+    "A: Layer x KV-head distant attention mass heatmap (retrieval vs streaming heads)",
+    "B: Multi-agent KV VRAM scaling curve comparing FP16 vs CoW vs quantized schedules"
+  ],
+  "activation_fixture": "bench/activations/micro_kv_2k.pt"
+}

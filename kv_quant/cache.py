@@ -1,29 +1,46 @@
-"""3-Tier Hybrid KV Cache with Copy-on-Write prefix hashing."""
+"""3-Tier Hybrid Paged KV Cache with Copy-on-Write prefix sharing.
 
+Tier 1: sink tokens pinned in FP16 (never quantized).
+Tier 2: sealed, quantized physical pages with ref-counted content-addressed sharing.
+Tier 3: rolling FP16 tail buffer that auto-seals into Tier 2 at group_size.
+"""
+
+from __future__ import annotations
+
+import hashlib
 from dataclasses import dataclass
 
 import torch
 
 from kv_quant.config import CacheConfig, QuantConfig
 from kv_quant.layout import PageLayout, get_layout
-from kv_quant.quantizer import QuantParams
+from kv_quant.quantizer import QuantParams, dequantize_group, quantize_group
+
+
+@dataclass
+class PhysicalPage:
+    """A sealed quantized page stored once in the physical pool."""
+
+    page_id: int
+    prefix_hash: int
+    k_payload: torch.Tensor  # (heads, dim, packed_len) uint8
+    v_payload: torch.Tensor
+    k_params: list[QuantParams]
+    v_params: list[QuantParams]
+    ref_count: int = 1
 
 
 @dataclass(frozen=True)
 class PageRef:
-    """Reference to a quantized page (copy-on-write)."""
+    """Lightweight reference to a physical page (copy-on-write)."""
 
     page_id: int
-    prefix_hash: int  # Hash of prefix for CoW deduplication
+    prefix_hash: int
     ref_count: int = 1
 
 
 class HybridPagedKVCache:
-    """3-Tier Hybrid KV Cache:
-    1. Sink tokens (FP16, never quantized)
-    2. Quantized pages (sealed, CoW with prefix hashing)
-    3. Active ring buffer (FP16, < group_size tokens)
-    """
+    """3-tier hybrid cache with CoW prefix sharing across agent sessions."""
 
     def __init__(
         self,
@@ -34,66 +51,275 @@ class HybridPagedKVCache:
         self.quant_config = quant_config
         self.cache_config = cache_config
         self.layout = layout or get_layout()
+        self.group_size: int = 64  # sealed block size (per spec)
 
-        # Tier 1: Sink tokens (FP16)
-        self.sink_k: torch.Tensor | None = None  # (sink_tokens, head_dim)
+        # Tier 1: sink
+        self.sink_k: torch.Tensor | None = None
         self.sink_v: torch.Tensor | None = None
+        self.sink_len: int = 0
 
-        # Tier 2: Quantized pages (sealed, CoW)
-        self.pages_k: list[tuple[torch.Tensor, list[QuantParams], PageRef]] = []
-        self.pages_v: list[tuple[torch.Tensor, list[QuantParams], PageRef]] = []
-
-        # Tier 3: Active ring buffer (FP16, trailing < group_size)
-        self.ring_k: torch.Tensor | None = None  # (group_size - 1, head_dim)
-        self.ring_v: torch.Tensor | None = None
-        self.ring_start: int = 0
-        self.ring_len: int = 0
-
-        # Page allocator
+        # Tier 2: physical pool + logical page table
+        self._pages: dict[int, PhysicalPage] = {}
+        self._pages_by_hash: dict[int, int] = {}
+        self.page_table: list[int] = []
         self._next_page_id: int = 0
-        self._page_pool: dict[int, PageRef] = {}
 
+        # Tier 3: ring tail
+        self.ring_k: torch.Tensor | None = None
+        self.ring_v: torch.Tensor | None = None
+        self.ring_len: int = 0
+        self._head_dim: int = 0
+        self._num_heads: int = 0
+        self._device: torch.device = torch.device("cpu")
+
+        # HBM accounting (naive path telemetry)
+        self.hbm_read_bytes: int = 0
+        self.hbm_write_bytes: int = 0
+
+    # ------------------------------------------------------------------ append
     def append(self, k: torch.Tensor, v: torch.Tensor) -> None:
-        """Append new KV tokens to the cache.
+        """Append KV tokens, filling sink -> ring -> sealed pages."""
+        if k.shape != v.shape:
+            raise ValueError("k and v must have identical shapes")
+        if k.dim() == 2:
+            k = k.unsqueeze(1)
+            v = v.unsqueeze(1)
+        seq_len, heads, dim = k.shape
+        self._head_dim, self._num_heads = dim, heads
+        self._device = k.device
 
-        Args:
-            k: Key tensor of shape (seq_len, num_heads, head_dim) or (seq_len, head_dim).
-            v: Value tensor of same shape as k.
-        """
-        raise NotImplementedError("append not implemented")
+        # Tier 1: fill sink first
+        need = self.quant_config.sink_tokens - self.sink_len
+        if need > 0:
+            take = min(need, seq_len)
+            sk = k[:take].to(torch.float16)
+            sv = v[:take].to(torch.float16)
+            self.sink_k = sk if self.sink_k is None else torch.cat([self.sink_k, sk], 0)
+            self.sink_v = sv if self.sink_v is None else torch.cat([self.sink_v, sv], 0)
+            self.sink_len += take
+            k, v = k[take:], v[take:]
+            seq_len -= take
+            self.hbm_write_bytes += sk.numel() * 2 + sv.numel() * 2
 
-    def get(self, indices: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """Retrieve KV at given indices.
+        # Tier 3: stream into ring, sealing full groups
+        for start in range(0, seq_len, self.group_size):
+            chunk_k = k[start : start + self.group_size]
+            chunk_v = v[start : start + self.group_size]
+            for token in range(chunk_k.shape[0]):
+                self._push_ring(chunk_k[token : token + 1], chunk_v[token : token + 1])
+                if self.ring_len == self.group_size:
+                    self.seal_page()
 
-        Args:
-            indices: Tensor of shape (num_indices,) with token indices.
+    def _push_ring(self, k: torch.Tensor, v: torch.Tensor) -> None:
+        k16, v16 = k.to(torch.float16), v.to(torch.float16)
+        if self.ring_k is None:
+            self.ring_k = k16
+            self.ring_v = v16
+        else:
+            assert self.ring_k is not None and self.ring_v is not None
+            self.ring_k = torch.cat([self.ring_k, k16], 0)
+            self.ring_v = torch.cat([self.ring_v, v16], 0)
+        self.ring_len += k16.shape[0]
+        self.hbm_write_bytes += k16.numel() * 2 + v16.numel() * 2
 
-        Returns:
-            (k, v) tensors of shape (num_indices, num_heads, head_dim).
-        """
-        raise NotImplementedError("get not implemented")
-
+    # ------------------------------------------------------------------ sealing
     def seal_page(self) -> None:
-        """Seal current ring buffer into a quantized page with CoW."""
-        raise NotImplementedError("seal_page not implemented")
+        """Quantize the full ring into a sealed page with CoW dedup."""
+        if self.ring_len == 0:
+            return
+        if self.ring_len < self.group_size:
+            # Partial tail stays in ring (never seal incomplete blocks)
+            return
+        assert self.ring_k is not None and self.ring_v is not None
+
+        k_payload, k_params = self._quantize_block(
+            self.ring_k, self.quant_config.k_bits, self.quant_config.k_scheme
+        )
+        v_payload, v_params = self._quantize_block(
+            self.ring_v, self.quant_config.v_bits, self.quant_config.v_scheme
+        )
+        prefix_hash = self._compute_prefix_hash(k_payload)
+        ref = self._get_or_create_page(prefix_hash, k_payload, k_params, v_payload, v_params)
+        self.page_table.append(ref.page_id)
+
+        # Reset ring
+        self.ring_k = None
+        self.ring_v = None
+        self.ring_len = 0
+
+    def _quantize_block(
+        self, block: torch.Tensor, bits: int, scheme: str
+    ) -> tuple[torch.Tensor, list[QuantParams]]:
+        """Quantize a (group_size, heads, dim) block per (head, dim) channel."""
+        heads, dim = self._num_heads, self._head_dim
+        packed_heads: list[torch.Tensor] = []
+        params: list[QuantParams] = []
+        for h in range(heads):
+            for d in range(dim):
+                channel = block[:, h, d]
+                packed, qp = quantize_group(channel, bits, scheme)  # type: ignore[arg-type]
+                packed_heads.append(packed)
+                params.append(qp)
+        max_len = max(p.shape[0] for p in packed_heads)
+        padded = []
+        for p in packed_heads:
+            if p.shape[0] < max_len:
+                pad = torch.zeros(max_len - p.shape[0], dtype=p.dtype, device=p.device)
+                padded.append(torch.cat([p, pad]))
+            else:
+                padded.append(p)
+        return torch.stack(padded), params  # (heads*dim, packed_len)
 
     def _compute_prefix_hash(self, page_data: torch.Tensor) -> int:
-        """Compute prefix hash for CoW deduplication."""
-        raise NotImplementedError("_compute_prefix_hash not implemented")
+        """Content-addressable SHA256 hash of a page payload."""
+        raw = bytes(page_data.flatten().tolist())
+        digest = hashlib.sha256(raw).digest()
+        return int.from_bytes(digest[:8], "big")
 
-    def _get_or_create_page(self, prefix_hash: int) -> PageRef:
-        """Get existing page with prefix_hash or create new (CoW)."""
-        raise NotImplementedError("_get_or_create_page not implemented")
+    def _get_or_create_page(
+        self,
+        prefix_hash: int,
+        k_payload: torch.Tensor,
+        k_params: list[QuantParams],
+        v_payload: torch.Tensor,
+        v_params: list[QuantParams],
+    ) -> PageRef:
+        """Return an existing physical page (incremented ref) or allocate a new one."""
+        if prefix_hash in self._pages_by_hash:
+            pid = self._pages_by_hash[prefix_hash]
+            self._pages[pid].ref_count += 1
+            return PageRef(
+                page_id=pid, prefix_hash=prefix_hash, ref_count=self._pages[pid].ref_count
+            )
+
+        pid = self._next_page_id
+        self._next_page_id += 1
+        self._pages[pid] = PhysicalPage(
+            page_id=pid,
+            prefix_hash=prefix_hash,
+            k_payload=k_payload,
+            v_payload=v_payload,
+            k_params=k_params,
+            v_params=v_params,
+            ref_count=1,
+        )
+        self._pages_by_hash[prefix_hash] = pid
+        self.hbm_write_bytes += k_payload.numel() + v_payload.numel()
+        return PageRef(page_id=pid, prefix_hash=prefix_hash, ref_count=1)
+
+    # ------------------------------------------------------------------ CoW fork
+    def fork_prefix(self) -> HybridPagedKVCache:
+        """Fork a new cache sharing all sealed physical pages (zero duplication)."""
+        child = HybridPagedKVCache(self.quant_config, self.cache_config, self.layout)
+        child.group_size = self.group_size
+        child._head_dim, child._num_heads = self._head_dim, self._num_heads
+        child._device = self._device
+        child.sink_k = self.sink_k
+        child.sink_v = self.sink_v
+        child.sink_len = self.sink_len
+        child._pages = dict(self._pages)  # share PhysicalPage objects
+        child._pages_by_hash = dict(self._pages_by_hash)
+        child.page_table = list(self.page_table)
+        child._next_page_id = self._next_page_id
+        child.ring_k = self.ring_k
+        child.ring_v = self.ring_v
+        child.ring_len = self.ring_len
+        for pid in child.page_table:
+            self._pages[pid].ref_count += 1
+        return child
+
+    def copy_on_write(self, page_id: int) -> int:
+        """Clone a shared page before an in-place write; returns the writable page id."""
+        page = self._pages[page_id]
+        if page.ref_count <= 1:
+            return page_id
+        page.ref_count -= 1
+        new_pid = self._next_page_id
+        self._next_page_id += 1
+        clone = PhysicalPage(
+            page_id=new_pid,
+            prefix_hash=page.prefix_hash,
+            k_payload=page.k_payload.clone(),
+            v_payload=page.v_payload.clone(),
+            k_params=list(page.k_params),
+            v_params=list(page.v_params),
+            ref_count=1,
+        )
+        self._pages[new_pid] = clone
+        self.page_table = [new_pid if p == page_id else p for p in self.page_table]
+        return new_pid
+
+    # ------------------------------------------------------------------ retrieval
+    def materialize(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """Materialize FP16 K/V from Tiers 1 + 2 + 3."""
+        pieces_k: list[torch.Tensor] = []
+        pieces_v: list[torch.Tensor] = []
+        if self.sink_k is not None:
+            assert self.sink_v is not None
+            pieces_k.append(self.sink_k)
+            pieces_v.append(self.sink_v)
+            self.hbm_read_bytes += self.sink_k.numel() * 2 + self.sink_v.numel() * 2
+
+        for pid in self.page_table:
+            page = self._pages[pid]
+            k = self._dequantize_payload(
+                page.k_payload, page.k_params, self.quant_config.k_bits, self.quant_config.k_scheme
+            )
+            v = self._dequantize_payload(
+                page.v_payload, page.v_params, self.quant_config.v_bits, self.quant_config.v_scheme
+            )
+            pieces_k.append(k)
+            pieces_v.append(v)
+            self.hbm_read_bytes += page.k_payload.numel() + page.v_payload.numel()
+
+        if self.ring_k is not None:
+            assert self.ring_v is not None
+            pieces_k.append(self.ring_k)
+            pieces_v.append(self.ring_v)
+            self.hbm_read_bytes += self.ring_k.numel() * 2 + self.ring_v.numel() * 2
+
+        if not pieces_k:
+            empty = torch.zeros(
+                0, self._num_heads, self._head_dim, dtype=torch.float16, device=self._device
+            )
+            return empty, empty
+        return torch.cat(pieces_k, 0), torch.cat(pieces_v, 0)
+
+    def _dequantize_payload(
+        self, payload: torch.Tensor, params: list[QuantParams], bits: int, scheme: str
+    ) -> torch.Tensor:
+        heads_dim = self._num_heads * self._head_dim
+        channels = []
+        for i in range(heads_dim):
+            packed = payload[i]
+            qp = params[i]
+            channels.append(dequantize_group(packed, qp, bits, scheme))  # type: ignore[arg-type]
+        # channels: (heads*dim, group_size) -> transpose -> (group_size, heads*dim)
+        block = torch.stack(channels, 0).t()
+        return block.reshape(self.group_size, self._num_heads, self._head_dim).to(torch.float16)
+
+    def get(self, indices: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        k, v = self.materialize()
+        return k[indices], v[indices]
 
     @property
     def total_tokens(self) -> int:
-        """Total tokens in cache (sink + pages + ring)."""
-        sink = self.quant_config.sink_tokens if self.sink_k is not None else 0
-        pages = len(self.pages_k) * self.layout.page_size
-        ring = self.ring_len
-        return sink + pages + ring
+        return self.sink_len + len(self.page_table) * self.group_size + self.ring_len
 
     @property
     def vram_bytes(self) -> int:
-        """Estimated VRAM usage in bytes."""
-        raise NotImplementedError("vram_bytes not implemented")
+        """Actual physical bytes (shared pages counted once)."""
+        sink = 0
+        if self.sink_k is not None:
+            assert self.sink_v is not None
+            sink = self.sink_k.numel() * 2 + self.sink_v.numel() * 2
+        pages = sum(p.k_payload.numel() + p.v_payload.numel() for p in self._pages.values())
+        ring = 0
+        if self.ring_k is not None:
+            assert self.ring_v is not None
+            ring = self.ring_k.numel() * 2 + self.ring_v.numel() * 2
+        return sink + pages + ring
+
+    @property
+    def shared_pages(self) -> int:
+        return sum(1 for p in self._pages.values() if p.ref_count > 1)

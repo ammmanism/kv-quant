@@ -1,9 +1,23 @@
 """Naive reference dequantization kernel (Python/Torch)."""
 
+from dataclasses import dataclass
+from typing import Any
+
 import torch
 
 from kv_quant.layout import PageLayout, get_layout
-from kv_quant.quantizer import QuantParams
+from kv_quant.quantizer import QuantParams, dequantize_group
+
+
+@dataclass(frozen=True)
+class NaiveDequantStats:
+    """Exact HBM read/write telemetry for the naive materialization path."""
+
+    hbm_read_bytes: int
+    hbm_write_bytes: int
+    pages_dequantized: int
+    sink_tokens: int
+    ring_tokens: int
 
 
 def dequant_naive(
@@ -70,3 +84,79 @@ def dequant_naive(
     # 3. Skip metadata (scale + zero_point per group) - already consumed via params_list
 
     return out
+
+
+def materialize_kv_naive(
+    sink_k: torch.Tensor | None,
+    sink_v: torch.Tensor | None,
+    pages: dict[int, Any],  # PhysicalPage from kv_quant.cache (duck-typed)
+    page_table: list[int],
+    ring_k: torch.Tensor | None,
+    ring_v: torch.Tensor | None,
+    k_bits: int,
+    v_bits: int,
+    k_scheme: str,
+    v_scheme: str,
+    num_heads: int,
+    head_dim: int,
+    group_size: int = 64,
+) -> tuple[torch.Tensor, torch.Tensor, NaiveDequantStats]:
+    """Materialize FP16 K/V from Tiers 1+2+3 before SDPA, logging exact HBM bytes.
+
+    Args:
+        sink_k/sink_v: Tier 1 FP16 sink tensors (sink_tokens, heads, dim).
+        pages: Mapping page_id -> PhysicalPage (with k_payload/v_payload/params).
+        page_table: Logical sequence of physical page ids.
+        ring_k/ring_v: Tier 3 FP16 tail buffers.
+        k_bits/v_bits, k_scheme/v_scheme: Quantization specs for dequantization.
+        num_heads, head_dim: Shape metadata.
+        group_size: Tokens per sealed page.
+
+    Returns:
+        (k_fp16, v_fp16, stats)
+    """
+    pieces_k: list[torch.Tensor] = []
+    pieces_v: list[torch.Tensor] = []
+    read_bytes = 0
+    write_bytes = 0
+
+    if sink_k is not None:
+        pieces_k.append(sink_k)
+        pieces_v.append(sink_v)  # type: ignore[arg-type]
+        read_bytes += sink_k.numel() * 2 + sink_v.numel() * 2  # type: ignore[union-attr]
+
+    for pid in page_table:
+        page = pages[pid]
+        k_ch, v_ch = [], []
+        heads_dim = num_heads * head_dim
+        for i in range(heads_dim):
+            k_ch.append(dequantize_group(page.k_payload[i], page.k_params[i], k_bits, k_scheme))  # type: ignore[arg-type]
+            v_ch.append(dequantize_group(page.v_payload[i], page.v_params[i], v_bits, v_scheme))  # type: ignore[arg-type]
+        k_block = torch.stack(k_ch, 0).t().reshape(group_size, num_heads, head_dim)
+        v_block = torch.stack(v_ch, 0).t().reshape(group_size, num_heads, head_dim)
+        pieces_k.append(k_block.to(torch.float16))
+        pieces_v.append(v_block.to(torch.float16))
+        read_bytes += page.k_payload.numel() + page.v_payload.numel()
+        write_bytes += k_block.numel() * 2 + v_block.numel() * 2
+
+    ring_tokens = 0
+    if ring_k is not None:
+        pieces_k.append(ring_k)
+        pieces_v.append(ring_v)  # type: ignore[arg-type]
+        ring_tokens = ring_k.shape[0]
+        read_bytes += ring_k.numel() * 2 + ring_v.numel() * 2  # type: ignore[union-attr]
+
+    if not pieces_k:
+        empty = torch.zeros(0, num_heads, head_dim, dtype=torch.float16)
+        return empty, empty, NaiveDequantStats(0, 0, 0, 0, 0)
+
+    k_fp16 = torch.cat(pieces_k, 0)
+    v_fp16 = torch.cat(pieces_v, 0)
+    stats = NaiveDequantStats(
+        hbm_read_bytes=read_bytes,
+        hbm_write_bytes=write_bytes,
+        pages_dequantized=len(page_table),
+        sink_tokens=sink_k.shape[0] if sink_k is not None else 0,
+        ring_tokens=ring_tokens,
+    )
+    return k_fp16, v_fp16, stats
