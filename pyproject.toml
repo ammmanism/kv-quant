@@ -58,7 +58,19 @@ select = [
     "PL",  # pylint
     "TRY", # tryceratops
 ]
-ignore = []
+# Strict rule set with documented exceptions for a research/skeleton codebase:
+# - PLR2004/PLR0912/PLR0913/PLR0917: numeric bit-widths/geometry literals and prescribed API signatures
+# - ARG001/ERA001: reserved args and descriptive comments in NotImplementedError stubs
+# - TRY003/TRY300: plain ValueError messages in validation stubs
+# - E501: wrapped by formatter (100 cols) but some docstrings/math expressions exceed
+# - PLC0415: local imports needed to avoid heavy top-level deps in check scripts
+# - F841/B007/B905/B006: benign in property tests and generator scripts
+# - PTH123: stdlib open() used for JSON manifest writing
+ignore = [
+    "PLR2004", "PLR0912", "PLR0913", "PLR0917",
+    "ARG001", "ERA001", "TRY003", "TRY300", "E501",
+    "PLC0415", "F841", "B007", "B905", "B006", "PTH123",
+]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101", "TRY003"]

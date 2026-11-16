@@ -28,8 +28,13 @@ REQUIRED_META_FIELDS = [
 
 
 def compute_sha256(path: Path) -> str:
-    """Compute SHA256 of a file."""
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    """Compute SHA256 with normalized line endings (cross-platform stable).
+
+    Git may check out CRLF on Windows but LF on Linux; normalizing ensures the
+    committed hash matches on every platform.
+    """
+    data = path.read_bytes().replace(b"\r\n", b"\n")
+    return hashlib.sha256(data).hexdigest()
 
 
 def check_figure(png_path: Path) -> tuple[bool, list[str]]:
@@ -57,14 +62,14 @@ def check_figure(png_path: Path) -> tuple[bool, list[str]]:
     if errors:
         return False, errors
 
-    # Verify generating script exists
-    script_path = Path(meta["generating_script"])
+    # Verify generating script exists (normalize separators for cross-platform)
+    script_path = Path(meta["generating_script"].replace("\\", "/"))
     if not script_path.exists():
         errors.append(f"Generating script not found: {script_path}")
 
-    # Verify source CSVs exist and hashes match
+    # Verify source CSVs exist and hashes match (normalize separators)
     for csv_rel, expected_hash in zip(meta["source_csvs"], meta["csv_hashes"]):
-        csv_path = Path(csv_rel)
+        csv_path = Path(csv_rel.replace("\\", "/"))
         if not csv_path.exists():
             errors.append(f"Source CSV not found: {csv_path}")
         else:
@@ -80,6 +85,7 @@ def check_figure(png_path: Path) -> tuple[bool, list[str]]:
         with Image.open(png_path) as img:
             width, height = img.size
             dpi = img.info.get("dpi", (72, 72))[0]  # default 72 if not set
+            dpi = round(dpi)  # PIL stores DPI as float with rounding error
 
             if width != meta["width_px"]:
                 errors.append(f"Width mismatch: meta={meta['width_px']}, actual={width}")

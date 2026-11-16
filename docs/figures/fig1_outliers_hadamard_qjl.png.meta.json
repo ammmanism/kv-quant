@@ -1,0 +1,19 @@
+{
+  "generating_script": "scripts/generate_phase1_artifacts.py",
+  "source_csvs": [
+    "bench/data/p1_sqnr_error_bounds.csv",
+    "bench/data/p1_hadamard_qjl_ablation.csv"
+  ],
+  "csv_hashes": [
+    "59270534873944181ee0bf655a63518df3e15277638983a1e8c69a3610000742",
+    "b4bd68b16236209e40bffeed736d84cef2f3f813844ede06e10c6a99018fb8f3"
+  ],
+  "width_px": 5369,
+  "height_px": 1467,
+  "dpi": 300,
+  "panels": [
+    "A: Post-RoPE channel outliers heatmap vs post-Hadamard smoothed channels",
+    "B: SQNR (dB) vs bit-width for Normal/Heavy-tailed/Uniform tensors",
+    "C: Inner-product MSE of INT2 vs INT2+QJL vs INT4"
+  ]
+}

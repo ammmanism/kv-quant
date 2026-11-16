@@ -23,29 +23,39 @@ from kv_quant.layout import (
 def compute_current_hash() -> str:
     """Compute hash of current layout constants."""
     from kv_quant.layout import (
-        BITS_PER_QUANT,
         GROUP_SIZE,
-        HIGH_NIBBLE_MASK,
-        HIGH_NIBBLE_SHIFT,
-        LOW_NIBBLE_MASK,
-        LOW_NIBBLE_SHIFT,
+        INT2_MASKS,
+        INT2_SHIFTS,
+        INT2_VALUES_PER_BYTE,
+        INT4_HIGH_MASK,
+        INT4_HIGH_SHIFT,
+        INT4_LOW_MASK,
+        INT4_LOW_SHIFT,
+        INT4_VALUES_PER_BYTE,
         PAGE_SIZE,
+        QJL_BITS_PER_WORD,
+        QJL_BYTES_PER_WORD,
         QJL_SEED,
         QJL_SKETCH_WORDS,
         SINK_TOKENS,
     )
 
     parts = [
-        str(BITS_PER_QUANT),
+        str(INT4_VALUES_PER_BYTE),
+        str(INT4_LOW_MASK),
+        str(INT4_HIGH_MASK),
+        str(INT4_LOW_SHIFT),
+        str(INT4_HIGH_SHIFT),
+        str(INT2_VALUES_PER_BYTE),
+        str(INT2_MASKS),
+        str(INT2_SHIFTS),
+        str(QJL_BITS_PER_WORD),
+        str(QJL_BYTES_PER_WORD),
         str(GROUP_SIZE),
         str(PAGE_SIZE),
         str(SINK_TOKENS),
         str(QJL_SKETCH_WORDS),
         str(QJL_SEED),
-        str(LOW_NIBBLE_MASK),
-        str(HIGH_NIBBLE_MASK),
-        str(LOW_NIBBLE_SHIFT),
-        str(HIGH_NIBBLE_SHIFT),
     ]
     data = "|".join(parts).encode()
     return hashlib.sha256(data).hexdigest()
