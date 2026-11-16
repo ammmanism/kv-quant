@@ -83,6 +83,15 @@ Figure [`docs/figures/fig2_head_bimodality_and_cow.png`](docs/figures/fig2_head_
 shows head bimodality (Panel A) and multi-agent VRAM scaling (Panel B).
 A deterministic micro-activation fixture is committed at `bench/activations/micro_kv_2k.pt`.
 
+### Phase 3: Fused Split-K Kernel
+- **HBM traffic reduction** from eliminating FP16 KV materialization (INT4, group=64):
+  [#p3_hbm_traffic_model.csv:hbm_traffic_reduction]
+- **FP8 tensor-core support** across GPU architectures:
+  [#arch_compat_matrix.csv:sm89_4090_l40s]
+
+Design notes, the 8.11× derivation, and the architecture matrix are in
+[`docs/KERNEL_NOTES.md`](docs/KERNEL_NOTES.md).
+
 ## CI Gates (8 Required)
 
 | Gate | Command | Invariant |

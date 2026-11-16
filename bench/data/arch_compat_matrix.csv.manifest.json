@@ -1,0 +1,16 @@
+{
+  "file": "arch_compat_matrix.csv",
+  "sha256": "02147490c75ce16d4e9d006125c30b4452c28316e1fda06b37567f4322211e76",
+  "description": "Fused kernel feature support across NVIDIA GPU architectures (sm80-sm100)",
+  "generated_by": "scripts/generate_phase3_artifacts.py",
+  "columns": [
+    "feature",
+    "sm80_a100",
+    "sm86_rtx3090",
+    "sm89_4090_l40s",
+    "sm90_h100",
+    "sm100_b200",
+    "notes"
+  ],
+  "num_rows": 5
+}

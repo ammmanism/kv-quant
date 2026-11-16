@@ -1,0 +1,6 @@
+feature,sm80_a100,sm86_rtx3090,sm89_4090_l40s,sm90_h100,sm100_b200,notes
+int8_unpack,yes,yes,yes,yes,yes,uint8 ld.global + int8 tl.dot on all Ampere+ SMs
+int4_nibble_unpack,yes,yes,yes,yes,yes,in-register AND/shift using INT4_LOW_MASK/HIGH_SHIFT from layout.py
+fp8_e4m3_tensorcore,no,no,yes,yes,yes,native FP8 MMA requires sm89+ (Ada/Hopper/Blackwell)
+l2_eviction_hints,yes,yes,yes,yes,yes,"evict_last on sink/scales, evict_first on streaming KV pages"
+splitk_gqa_broadcast,yes,yes,yes,yes,yes,"grid=(batch*kv_heads, num_splits); K loaded once, dotted vs GQA group"

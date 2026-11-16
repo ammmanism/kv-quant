@@ -1,0 +1,18 @@
+{
+  "file": "p3_hbm_traffic_model.csv",
+  "sha256": "14e956e30399cba66ce8a765be1c74cb867c477ee6b62deb88115d063204c478",
+  "description": "Analytical HBM traffic model: naive FP16 materialization vs fused split-K",
+  "generated_by": "scripts/generate_phase3_artifacts.py",
+  "columns": [
+    "head_dim",
+    "num_kv_heads",
+    "group_size",
+    "bits",
+    "quantized_mb",
+    "fp16_materialized_mb",
+    "naive_hbm_mb",
+    "fused_hbm_mb",
+    "hbm_traffic_reduction"
+  ],
+  "num_rows": 12
+}
