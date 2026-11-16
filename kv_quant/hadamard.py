@@ -7,7 +7,6 @@ Rotating post-RoPE Q' = Q S H_D and K' = K S H_D preserves exact inner products
 <Q', K'> = <Q, K> while reducing channel kurtosis from κ > 25 to κ ≈ 3.0.
 """
 
-
 import torch
 
 
@@ -46,15 +45,15 @@ def hadamard_transform(
     while step < d:
         for i in range(0, d, 2 * step):
             # Clone to avoid view aliasing: first and second must be independent of h
-            first = h[..., i:i+step].clone()
-            second = h[..., i+step:i+2*step].clone()
+            first = h[..., i : i + step].clone()
+            second = h[..., i + step : i + 2 * step].clone()
             # Butterfly: [u, v] -> [u+v, u-v]
-            h[..., i:i+step] = first + second
-            h[..., i+step:i+2*step] = first - second
+            h[..., i : i + step] = first + second
+            h[..., i + step : i + 2 * step] = first - second
         step *= 2
 
     if normalize:
-        h = h / (d ** 0.5)
+        h = h / (d**0.5)
 
     return h.to(dtype)
 
@@ -187,10 +186,10 @@ def compute_kurtosis(x: torch.Tensor, dim: int = -1) -> torch.Tensor:
     x_float = x.to(torch.float32)
     mean = x_float.mean(dim=dim, keepdim=True)
     centered = x_float - mean
-    var = (centered ** 2).mean(dim=dim, keepdim=True)
+    var = (centered**2).mean(dim=dim, keepdim=True)
     std = torch.sqrt(var + 1e-8)
-    fourth_moment = (centered ** 4).mean(dim=dim, keepdim=True)
-    kurtosis = fourth_moment / (std ** 4) - 3.0
+    fourth_moment = (centered**4).mean(dim=dim, keepdim=True)
+    kurtosis = fourth_moment / (std**4) - 3.0
     return kurtosis.squeeze(dim)
 
 

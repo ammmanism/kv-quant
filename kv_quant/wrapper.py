@@ -12,6 +12,7 @@ from kv_quant.config import CacheConfig, QuantConfig
 @dataclass
 class WrappedModelOutput:
     """Output from wrapped model forward pass."""
+
     logits: torch.Tensor
     past_kv: HybridPagedKVCache | None = None
 

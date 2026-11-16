@@ -19,9 +19,10 @@ from kv_quant.qjl_sketch import (
 @dataclass(frozen=True)
 class QuantParams:
     """Quantization parameters for a single group."""
-    scale: torch.Tensor       # FP16, shape ()
+
+    scale: torch.Tensor  # FP16, shape ()
     zero_point: torch.Tensor  # UINT8, shape () - only for asymmetric
-    original_size: int = 0    # Original tensor size (for unpack padding)
+    original_size: int = 0  # Original tensor size (for unpack padding)
     # For QJL
     qjl_sketch: QJLSketch | None = None
     qjl_projection: torch.Tensor | None = None
@@ -74,7 +75,7 @@ def _quantize_asymmetric(
     Returns:
         (quantized_int, scale, zero_point) where quantized_int in [0, 2^bits - 1].
     """
-    max_val = 2 ** bits - 1
+    max_val = 2**bits - 1
     x_min = x.min()
     x_max = x.max()
 
@@ -143,7 +144,9 @@ def pack_int4(x_q: torch.Tensor, signed: bool = True) -> torch.Tensor:
     return packed
 
 
-def unpack_int4(packed: torch.Tensor, signed: bool = True, original_size: int | None = None) -> torch.Tensor:
+def unpack_int4(
+    packed: torch.Tensor, signed: bool = True, original_size: int | None = None
+) -> torch.Tensor:
     """
     Unpack INT4 values from uint8.
 
@@ -202,15 +205,19 @@ def pack_int2(x_q: torch.Tensor, signed: bool = True) -> torch.Tensor:
 
     x_unsigned = x_unsigned.view(-1, 4)
 
-    packed = (x_unsigned[:, 0] |
-              (x_unsigned[:, 1] << 2) |
-              (x_unsigned[:, 2] << 4) |
-              (x_unsigned[:, 3] << 6))
+    packed = (
+        x_unsigned[:, 0]
+        | (x_unsigned[:, 1] << 2)
+        | (x_unsigned[:, 2] << 4)
+        | (x_unsigned[:, 3] << 6)
+    )
 
     return packed
 
 
-def unpack_int2(packed: torch.Tensor, signed: bool = True, original_size: int | None = None) -> torch.Tensor:
+def unpack_int2(
+    packed: torch.Tensor, signed: bool = True, original_size: int | None = None
+) -> torch.Tensor:
     """
     Unpack INT2 values from uint8.
 
@@ -278,7 +285,7 @@ def quantize_group(
     else:
         x_q, scale, zero_point = _quantize_asymmetric(x, bits, generator)
 
-    is_signed = (scheme == "sym")
+    is_signed = scheme == "sym"
 
     # Pack based on bit-width
     if bits == 4:
@@ -327,7 +334,7 @@ def dequantize_group(
         return packed.view(torch.float16)
 
     original_size = params.original_size if params.original_size > 0 else None
-    is_signed = (scheme == "sym")
+    is_signed = scheme == "sym"
 
     # Unpack
     if bits == 4:
@@ -540,7 +547,7 @@ def estimate_attention_logits_qjl(
         Attention logits (seq_len_q, seq_len_k, num_heads).
     """
     # Base logits from dequantized K
-    base_logits = torch.einsum('qhd,khd->qkh', q, k_dequantized)
+    base_logits = torch.einsum("qhd,khd->qkh", q, k_dequantized)
 
     # Add QJL residual correction
     # For each group, estimate <q, r> and add to appropriate positions
@@ -549,6 +556,7 @@ def estimate_attention_logits_qjl(
 
 
 # ===== Property-based test helpers =====
+
 
 def theoretical_max_error(bits: int, scheme: Literal["sym", "asym"]) -> float:
     """
@@ -565,7 +573,7 @@ def theoretical_max_error(bits: int, scheme: Literal["sym", "asym"]) -> float:
     if scheme == "sym":
         return float(1.0 / (2 ** (bits - 1) - 1))
     else:
-        return float(1.0 / (2 ** bits - 1))
+        return float(1.0 / (2**bits - 1))
 
 
 def theoretical_sqnr_db(bits: int) -> float:
@@ -576,16 +584,16 @@ def theoretical_sqnr_db(bits: int) -> float:
     For uniform quantization of uniform: SQNR ≈ 6.02 * bits dB
     """
     if bits >= 16:
-        return float('inf')
+        return float("inf")
     return 6.02 * bits
 
 
 def compute_sqnr_db(original: torch.Tensor, reconstructed: torch.Tensor) -> float:
     """Compute actual SQNR in dB between original and reconstructed."""
-    signal_power = (original ** 2).mean()
+    signal_power = (original**2).mean()
     noise_power = ((original - reconstructed) ** 2).mean()
     if noise_power == 0:
-        return float('inf')
+        return float("inf")
     return 10 * torch.log10(signal_power / noise_power).item()
 
 

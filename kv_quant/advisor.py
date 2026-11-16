@@ -12,6 +12,7 @@ from kv_quant.vram import VRAMBreakdown
 @dataclass(frozen=True)
 class AdvisorRecommendation:
     """Recommended configuration with rationale."""
+
     quant_config: QuantConfig
     cache_config: CacheConfig
     estimated_vram: VRAMBreakdown

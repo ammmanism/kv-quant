@@ -33,11 +33,12 @@ from kv_quant.quantizer import (
 
 # ─── Hypothesis Strategies ───
 
+
 @st.composite
 def power_of_two(draw, min_exp=4, max_exp=10):
     """Generate power of 2 dimensions."""
     exp = draw(st.integers(min_exp, max_exp))
-    return 2 ** exp
+    return 2**exp
 
 
 @st.composite
@@ -55,14 +56,18 @@ def tensor_2d(draw, dtype=torch.float16, min_rows=1, max_rows=8, min_cols=16, ma
     """Generate 2D tensors."""
     rows = draw(st.integers(min_rows, max_rows))
     cols = draw(power_of_two(min_exp=4, max_exp=9))
-    x = draw(st.lists(
-        st.lists(st.floats(-10, 10, width=32), min_size=cols, max_size=cols),
-        min_size=rows, max_size=rows
-    ))
+    x = draw(
+        st.lists(
+            st.lists(st.floats(-10, 10, width=32), min_size=cols, max_size=cols),
+            min_size=rows,
+            max_size=rows,
+        )
+    )
     return torch.tensor(x, dtype=dtype)
 
 
 # ─── Quantizer Tests ───
+
 
 class TestQuantizeDequantize:
     """Test quantize/dequantize round-trip properties."""
@@ -102,8 +107,9 @@ class TestQuantizeDequantize:
         theoretical = theoretical_max_error(bits, scheme)
 
         # Allow 3x theoretical due to floating point and block quantization effects
-        assert max_err <= theoretical * 3 + 1e-3, \
+        assert max_err <= theoretical * 3 + 1e-3, (
             f"Max error {max_err:.6f} exceeds 3x theoretical {theoretical:.6f} (bits={bits}, scheme={scheme})"
+        )
 
     @settings(max_examples=30, deadline=None)
     @given(
@@ -139,7 +145,7 @@ class TestQuantizeDequantize:
 
         # Compute noise
         noise = x_normalized - x_recon
-        noise_power = (noise ** 2).mean().item()
+        noise_power = (noise**2).mean().item()
 
         # Skip if noise is zero (perfect reconstruction = infinite SQNR)
         # Use higher threshold due to FP16 precision
@@ -153,8 +159,9 @@ class TestQuantizeDequantize:
         tolerance = 8.0 if bits == 2 else 5.0
 
         # SQNR should be within tolerance of theoretical for well-behaved distributions
-        assert abs(sqnr - theoretical) <= tolerance, \
+        assert abs(sqnr - theoretical) <= tolerance, (
             f"SQNR {sqnr:.1f} dB deviates >{tolerance} dB from theoretical {theoretical:.1f} dB (bits={bits})"
+        )
 
     @settings(max_examples=20, deadline=None)
     @given(
@@ -175,8 +182,7 @@ class TestQuantizeDequantize:
         else:
             expected = x.shape[0]
 
-        assert packed.shape[0] == expected, \
-            f"Packed shape {packed.shape} != expected {expected}"
+        assert packed.shape[0] == expected, f"Packed shape {packed.shape} != expected {expected}"
 
 
 class TestInt4Packing:
@@ -223,6 +229,7 @@ class TestInt2Packing:
 
 # ─── Hadamard Tests ───
 
+
 class TestHadamard:
     """Test Fast Walsh-Hadamard Transform properties."""
 
@@ -243,8 +250,9 @@ class TestHadamard:
         # Check norm preservation (Parseval's theorem)
         orig_norm = torch.norm(x_float, dim=-1)
         trans_norm = torch.norm(x_h, dim=-1)
-        assert torch.allclose(orig_norm, trans_norm, rtol=1e-4), \
+        assert torch.allclose(orig_norm, trans_norm, rtol=1e-4), (
             f"Norm not preserved: {orig_norm} vs {trans_norm}"
+        )
 
     @settings(max_examples=20, deadline=None)
     @given(
@@ -255,8 +263,9 @@ class TestHadamard:
         x_float = x.to(torch.float32)
         x_h = hadamard_transform(x_float)
         x_recon = inverse_hadamard_transform(x_h)
-        assert torch.allclose(x_float, x_recon, atol=1e-3), \
+        assert torch.allclose(x_float, x_recon, atol=1e-3), (
             "Inverse transform failed to reconstruct"
+        )
 
     @settings(max_examples=20, deadline=None)
     @given(
@@ -285,8 +294,9 @@ class TestHadamard:
 
         trans_ip = (q_prime @ k_prime.transpose(-2, -1)).squeeze()
 
-        assert torch.allclose(orig_ip, trans_ip, atol=1e-3), \
+        assert torch.allclose(orig_ip, trans_ip, atol=1e-3), (
             f"Inner product not preserved: {orig_ip} vs {trans_ip}"
+        )
 
     @settings(max_examples=15, deadline=None)
     @given(
@@ -315,11 +325,13 @@ class TestHadamard:
 
         # Kurtosis should decrease (closer to 0 = Gaussian)
         # Allow some variance - just check it's reduced
-        assert kurt_after.abs().mean() < kurt_before.abs().mean() * 0.8, \
+        assert kurt_after.abs().mean() < kurt_before.abs().mean() * 0.8, (
             f"Kurtosis not reduced: before={kurt_before.abs().mean():.2f}, after={kurt_after.abs().mean():.2f}"
+        )
 
 
 # ─── QJL Sketch Tests ───
+
 
 class TestQJLSketch:
     """Test 1-bit QJL sketch properties."""
@@ -356,13 +368,15 @@ class TestQJLSketch:
 
         # Compute sketch of r with Gaussian projection (proper for unbiased estimator)
         from kv_quant.qjl_sketch import generate_gaussian_projection
+
         num_words = (size + 31) // 32
         projection = generate_gaussian_projection(size, num_words, generator=gen)
         sketch = compute_qjl_sketch(r.unsqueeze(0), projection=projection)
 
         # Estimate <q, r> using the SAME projection
-        estimated = estimate_qjl_inner_product(q, sketch, projection=projection,
-                                               use_rademacher=False)
+        estimated = estimate_qjl_inner_product(
+            q, sketch, projection=projection, use_rademacher=False
+        )
 
         # True inner product
         true_ip = (q @ r).item()
@@ -375,17 +389,17 @@ class TestQJLSketch:
             gen_s = torch.Generator().manual_seed(seed)
             proj_s = generate_gaussian_projection(size, m_words, generator=gen_s)
             sketch_s = compute_qjl_sketch(r.unsqueeze(0), projection=proj_s)
-            est_s = estimate_qjl_inner_product(q, sketch_s, projection=proj_s,
-                                               use_rademacher=False)
+            est_s = estimate_qjl_inner_product(q, sketch_s, projection=proj_s, use_rademacher=False)
             estimates.append(est_s.item())
         avg_estimate = sum(estimates) / len(estimates)
 
         # The averaged estimator should be close to true (unbiasedness convergence)
         # Report relative to the magnitude scale (||q||*||r||/sqrt(d)) to be robust
-        scale = (q.norm().item() * r.norm().item()) / (size ** 0.5)
+        scale = (q.norm().item() * r.norm().item()) / (size**0.5)
         abs_error = abs(avg_estimate - true_ip)
-        assert abs_error < 0.15 * scale + 0.5, \
+        assert abs_error < 0.15 * scale + 0.5, (
             f"QJL avg estimate {avg_estimate:.4f} vs true {true_ip:.4f}, abs_err={abs_error:.4f}, scale={scale:.4f}"
+        )
 
     @settings(max_examples=30, deadline=None)
     @given(
@@ -394,7 +408,7 @@ class TestQJLSketch:
     def test_pack_unpack_signs(self, x: torch.Tensor):
         """Pack + unpack QJL signs should be identity."""
         # Convert to boolean signs
-        signs_bool = (x > 0)
+        signs_bool = x > 0
         packed = pack_qjl_signs(signs_bool)
         unpacked = unpack_qjl_signs(packed, x.shape[0])
 
@@ -404,6 +418,7 @@ class TestQJLSketch:
 
 
 # ─── Integration Tests ───
+
 
 class TestIntegration:
     """Integration tests combining quantizer, Hadamard, QJL."""
@@ -474,11 +489,13 @@ class TestIntegration:
         # Transformed logits
         trans_logits = q_h @ k_h.transpose(-2, -1)
 
-        assert torch.allclose(orig_logits, trans_logits, atol=1e-2), \
+        assert torch.allclose(orig_logits, trans_logits, atol=1e-2), (
             "Attention logits not preserved by Hadamard"
+        )
 
 
 # ─── SQNR/Error Bounds CSV Generation ───
+
 
 def test_generate_sqnr_csv(tmp_path):
     """Generate SQNR vs bit-width data for CSV."""
@@ -516,18 +533,20 @@ def test_generate_sqnr_csv(tmp_path):
                     theoretical_sqnr = theoretical_sqnr_db(bits)
                     bytes_per_elem = (bits / 8) + (2 * (1 + (scheme == "asym")) / group_size)
 
-                    results.append({
-                        "config_id": f"{bits}b_{scheme}_{dist_type}_g{group_size}",
-                        "bits": bits,
-                        "scheme": scheme,
-                        "group_size": group_size,
-                        "dist_type": dist_type,
-                        "theoretical_max_err": theoretical_max,
-                        "measured_max_err": max_err,
-                        "sqnr_db": sqnr,
-                        "theoretical_sqnr_db": theoretical_sqnr,
-                        "effective_bytes_per_elem": bytes_per_elem,
-                    })
+                    results.append(
+                        {
+                            "config_id": f"{bits}b_{scheme}_{dist_type}_g{group_size}",
+                            "bits": bits,
+                            "scheme": scheme,
+                            "group_size": group_size,
+                            "dist_type": dist_type,
+                            "theoretical_max_err": theoretical_max,
+                            "measured_max_err": max_err,
+                            "sqnr_db": sqnr,
+                            "theoretical_sqnr_db": theoretical_sqnr,
+                            "effective_bytes_per_elem": bytes_per_elem,
+                        }
+                    )
 
     df = pd.DataFrame(results)
     csv_path = tmp_path / "p1_sqnr_error_bounds.csv"
@@ -535,6 +554,7 @@ def test_generate_sqnr_csv(tmp_path):
 
     # Also write manifest
     import json
+
     manifest = {
         "columns": list(df.columns),
         "description": "SQNR and error bounds for various quantization configs",
@@ -606,22 +626,29 @@ def test_generate_hadamard_qjl_ablation_csv(tmp_path):
                         # QJL would improve this
                         ip_mse_with_qjl = ip_mse_no_qjl * 0.5  # Placeholder
 
-                    results.append({
-                        "config_id": f"out{outlier_ratio:.3f}_b{bits}_H{use_hadamard}_Q{use_qjl}",
-                        "outlier_ratio": outlier_ratio,
-                        "pre_kurtosis": pre_kurt,
-                        "post_hadamard_kurtosis": post_kurt,
-                        "sqnr_no_hadamard_db": sqnr_no_hadamard if not np.isnan(sqnr_no_hadamard) else "",
-                        "sqnr_with_hadamard_db": sqnr_with_hadamard if not np.isnan(sqnr_with_hadamard) else "",
-                        "inner_prod_mse_no_qjl": ip_mse_no_qjl,
-                        "inner_prod_mse_with_qjl": ip_mse_with_qjl,
-                    })
+                    results.append(
+                        {
+                            "config_id": f"out{outlier_ratio:.3f}_b{bits}_H{use_hadamard}_Q{use_qjl}",
+                            "outlier_ratio": outlier_ratio,
+                            "pre_kurtosis": pre_kurt,
+                            "post_hadamard_kurtosis": post_kurt,
+                            "sqnr_no_hadamard_db": sqnr_no_hadamard
+                            if not np.isnan(sqnr_no_hadamard)
+                            else "",
+                            "sqnr_with_hadamard_db": sqnr_with_hadamard
+                            if not np.isnan(sqnr_with_hadamard)
+                            else "",
+                            "inner_prod_mse_no_qjl": ip_mse_no_qjl,
+                            "inner_prod_mse_with_qjl": ip_mse_with_qjl,
+                        }
+                    )
 
     df = pd.DataFrame(results)
     csv_path = tmp_path / "p1_hadamard_qjl_ablation.csv"
     df.to_csv(csv_path, index=False)
 
     import json
+
     manifest = {
         "columns": list(df.columns),
         "description": "Hadamard + QJL ablation study",

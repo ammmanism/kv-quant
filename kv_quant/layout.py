@@ -29,13 +29,14 @@ QJL_BITS_PER_WORD: Final[int] = 32
 QJL_BYTES_PER_WORD: Final[int] = 4
 
 # ─── Group & page geometry ───
-GROUP_SIZE: Final[int] = 128            # tokens per quantization group (max)
-PAGE_SIZE: Final[int] = 260             # tokens per page (2 groups + 4 sink)
-SINK_TOKENS: Final[int] = 4             # FP16 sink tokens (never quantized)
+GROUP_SIZE: Final[int] = 128  # tokens per quantization group (max)
+PAGE_SIZE: Final[int] = 260  # tokens per page (2 groups + 4 sink)
+SINK_TOKENS: Final[int] = 4  # FP16 sink tokens (never quantized)
 
 # ─── QJL sketch ───
-QJL_SKETCH_WORDS: Final[int] = 0        # 0 = disabled; >0 enables QJL projection
-QJL_SEED: Final[int] = 0xC0FFEE         # fixed seed for reproducibility
+QJL_SKETCH_WORDS: Final[int] = 0  # 0 = disabled; >0 enables QJL projection
+QJL_SEED: Final[int] = 0xC0FFEE  # fixed seed for reproducibility
+
 
 # ─── Byte accounting helpers ───
 def bytes_per_element(
@@ -117,9 +118,7 @@ def page_bytes(
 # ─── Layout version hash (updated when layout changes) ───
 # Computed as: sha256(f"{constants in deterministic order}")
 LAYOUT_VERSION: Final[str] = "v0.1.0-quantizer"
-LAYOUT_GOLDEN_HASH: Final[str] = (
-    "913cd248603f77d8bb1b3cffe94fb876f016bd88c3f9b2f69ca4899dfee350b1"
-)
+LAYOUT_GOLDEN_HASH: Final[str] = "913cd248603f77d8bb1b3cffe94fb876f016bd88c3f9b2f69ca4899dfee350b1"
 
 
 @dataclass(frozen=True)
@@ -148,8 +147,14 @@ class PageLayout:
 
     @property
     def total_bytes(self) -> int:
-        return page_bytes(self.bits, self.group_size, self.asymmetric, self.qjl_enabled,
-                          self.page_size, self.sink_tokens)
+        return page_bytes(
+            self.bits,
+            self.group_size,
+            self.asymmetric,
+            self.qjl_enabled,
+            self.page_size,
+            self.sink_tokens,
+        )
 
 
 def get_layout() -> PageLayout:

@@ -16,10 +16,11 @@ import torch
 @dataclass(frozen=True)
 class QJLSketch:
     """Packed QJL sketch for a quantization group."""
+
     # Sign bits packed into uint32 words (32 signs per word)
-    signs: torch.Tensor      # shape (num_words,), dtype=torch.uint32
+    signs: torch.Tensor  # shape (num_words,), dtype=torch.uint32
     # Residual L2 norm (FP16)
-    norm: torch.Tensor       # shape (), dtype=torch.float16
+    norm: torch.Tensor  # shape (), dtype=torch.float16
     # Number of dimensions (for unpacking)
     dim: int
 
@@ -49,7 +50,9 @@ def generate_rademacher_projection(
 
     total_bits = num_words * 32
     # Generate ±1 matrix
-    proj = torch.randint(0, 2, (total_bits, dim), generator=generator, device=device, dtype=torch.int8)
+    proj = torch.randint(
+        0, 2, (total_bits, dim), generator=generator, device=device, dtype=torch.int8
+    )
     proj = proj * 2 - 1  # Convert 0/1 to -1/+1
 
     return proj
@@ -139,7 +142,7 @@ def compute_qjl_sketch(
     # Pack 32 bits per word - use int64 for bitwise operations, then cast to uint32
     packed = torch.zeros(signs.shape[:2], dtype=torch.int64, device=residual.device)
     for i in range(32):
-        packed |= (signs[:, :, i].to(torch.int64) << i)
+        packed |= signs[:, :, i].to(torch.int64) << i
     packed = packed.to(torch.uint32)
 
     # Return first vector's sketch (assuming batch size 1 for now)
@@ -264,7 +267,7 @@ def pack_qjl_signs(signs: torch.Tensor) -> torch.Tensor:
     packed = torch.zeros(signs.shape[:-1], dtype=torch.int64, device=signs.device)
 
     for i in range(32):
-        packed |= (signs[..., i].to(torch.int64) << i)
+        packed |= signs[..., i].to(torch.int64) << i
     packed = packed.to(torch.uint32)
 
     return packed
@@ -284,7 +287,9 @@ def unpack_qjl_signs(packed: torch.Tensor, dim: int) -> torch.Tensor:
     num_words = packed.shape[-1]
     # Use int64 for bitwise operations
     packed_int = packed.to(torch.int64)
-    signs = torch.zeros(*packed.shape[:-1], num_words * 32, dtype=torch.float32, device=packed.device)
+    signs = torch.zeros(
+        *packed.shape[:-1], num_words * 32, dtype=torch.float32, device=packed.device
+    )
 
     for i in range(32):
         bit = (packed_int >> i) & 1

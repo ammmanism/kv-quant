@@ -40,6 +40,7 @@ def render_quality_curve() -> Path:
         "dpi": 300,
     }
     import json
+
     (out_path.with_suffix(out_path.suffix + ".meta.json")).write_text(json.dumps(meta, indent=2))
 
     return out_path
@@ -66,6 +67,7 @@ def render_vram_savings() -> Path:
         "dpi": 300,
     }
     import json
+
     (out_path.with_suffix(out_path.suffix + ".meta.json")).write_text(json.dumps(meta, indent=2))
 
     return out_path

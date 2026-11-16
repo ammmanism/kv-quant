@@ -48,7 +48,7 @@ def dequant_naive(
 
         # Extract packed INT4 for this group
         group_quant_bytes = group_size // 2  # 2 values per byte
-        group_packed = packed_page[quant_offset:quant_offset + group_quant_bytes]
+        group_packed = packed_page[quant_offset : quant_offset + group_quant_bytes]
         quant_offset += group_quant_bytes
 
         # Unpack nibbles
@@ -65,7 +65,7 @@ def dequant_naive(
 
         # Write to output
         out_idx = sink_tokens + g * group_size
-        out[out_idx:out_idx + group_size] = dequant.to(torch.float16)
+        out[out_idx : out_idx + group_size] = dequant.to(torch.float16)
 
     # 3. Skip metadata (scale + zero_point per group) - already consumed via params_list
 

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class ProfileResult:
     """Result of a kernel profile run."""
+
     mean_us: float
     std_us: float
     min_us: float

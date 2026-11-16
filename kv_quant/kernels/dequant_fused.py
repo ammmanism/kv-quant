@@ -10,10 +10,10 @@ from kv_quant.quantizer import QuantParams
 
 @triton.jit
 def _dequant_fused_kernel(
-    packed_ptr,      # uint8* packed page data
-    scales_ptr,      # fp16* scales (one per group)
-    zps_ptr,         # uint8* zero_points (one per group)
-    out_ptr,         # fp16* output
+    packed_ptr,  # uint8* packed page data
+    scales_ptr,  # fp16* scales (one per group)
+    zps_ptr,  # uint8* zero_points (one per group)
+    out_ptr,  # fp16* output
     page_size: tl.constexpr,
     sink_tokens: tl.constexpr,
     group_size: tl.constexpr,

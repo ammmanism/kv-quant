@@ -53,7 +53,7 @@ class BenchConfig:
 
     concurrency: int = 1
     isl: int = 128  # input sequence length
-    osl: int = 32   # output sequence length
+    osl: int = 32  # output sequence length
     warmup: int = 2
     runs: int = 5
     model: str = "meta-llama/Llama-2-7b-hf"

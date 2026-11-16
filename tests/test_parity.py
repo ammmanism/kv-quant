@@ -12,6 +12,7 @@ from kv_quant.quantizer import QuantParams
 
 try:
     from kv_quant.kernels.dequant_fused import dequant_fused
+
     HAS_TRITON = True
 except ImportError:
     dequant_fused = None
@@ -63,7 +64,7 @@ def make_test_page(layout: PageLayout, device: str) -> tuple[torch.Tensor, list[
             high = (g * 16 + i * 2 + 1) % 16
             group_data[i] = low | (high << 4)
 
-        packed[quant_offset:quant_offset + quant_bytes_per_group] = group_data
+        packed[quant_offset : quant_offset + quant_bytes_per_group] = group_data
         quant_offset += quant_bytes_per_group
 
         # Params for this group
@@ -77,7 +78,7 @@ def make_test_page(layout: PageLayout, device: str) -> tuple[torch.Tensor, list[
     for g in range(groups_per_page):
         # Scale (fp16) - use 1-D tensor so view to uint8 works on all platforms
         scale_bytes = torch.tensor([0.05], dtype=torch.float16, device=device).view(torch.uint8)
-        packed[quant_offset:quant_offset + 2] = scale_bytes
+        packed[quant_offset : quant_offset + 2] = scale_bytes
         quant_offset += 2
         # Zero point (uint8)
         packed[quant_offset] = 8
@@ -121,7 +122,11 @@ def test_dequant_parity_random(layout: PageLayout, device: str):
     for g in range(groups_per_page):
         scale = torch.tensor(torch.rand(1).item() * 0.1 + 0.01, dtype=torch.float16, device=device)
         zero_point = torch.randint(0, 16, (1,), dtype=torch.uint8, device=device).item()
-        params_list.append(QuantParams(scale=scale, zero_point=torch.tensor(zero_point, dtype=torch.uint8, device=device)))
+        params_list.append(
+            QuantParams(
+                scale=scale, zero_point=torch.tensor(zero_point, dtype=torch.uint8, device=device)
+            )
+        )
 
     naive_out = dequant_naive(packed, params_list, layout)
     fused_out = dequant_fused(packed, params_list, layout)

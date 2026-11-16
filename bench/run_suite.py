@@ -28,14 +28,16 @@ def run_benchmark(
     print(f"Warmup: {warmup}, Runs: {runs}")
 
     # Dummy results for skeleton
-    results = pd.DataFrame({
-        "metric": ["accuracy", "vram_mib", "latency_ms", "throughput_tps"],
-        "value": [0.95, 1024.0, 45.2, 1250.0],
-        "concurrency": [concurrency] * 4,
-        "isl": [isl] * 4,
-        "osl": [osl] * 4,
-        "model": [model] * 4,
-    })
+    results = pd.DataFrame(
+        {
+            "metric": ["accuracy", "vram_mib", "latency_ms", "throughput_tps"],
+            "value": [0.95, 1024.0, 45.2, 1250.0],
+            "concurrency": [concurrency] * 4,
+            "isl": [isl] * 4,
+            "osl": [osl] * 4,
+            "model": [model] * 4,
+        }
+    )
 
     output.parent.mkdir(parents=True, exist_ok=True)
     results.to_csv(output, index=False)
@@ -49,8 +51,15 @@ def main():
     parser.add_argument("--osl", type=int, default=32, help="Output sequence length")
     parser.add_argument("--warmup", type=int, default=2, help="Warmup runs")
     parser.add_argument("--runs", type=int, default=5, help="Timed runs")
-    parser.add_argument("--model", type=str, default="meta-llama/Llama-2-7b-hf", help="Model to benchmark")
-    parser.add_argument("--output", type=Path, default=Path("bench/data/quality-current.csv"), help="Output CSV path")
+    parser.add_argument(
+        "--model", type=str, default="meta-llama/Llama-2-7b-hf", help="Model to benchmark"
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("bench/data/quality-current.csv"),
+        help="Output CSV path",
+    )
 
     args = parser.parse_args()
 
