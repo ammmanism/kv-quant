@@ -1,0 +1,19 @@
+{
+  "file": "p1_sqnr_error_bounds.csv",
+  "sha256": "e96aa9cb3d04950bb8fb120e71d98fa727317f6c8478067ae51963422d1a7c03",
+  "description": "SQNR and quantization error bounds for INT2/4/6/8/16 across schemes and distributions",
+  "generated_by": "scripts/generate_phase1_artifacts.py",
+  "columns": [
+    "config_id",
+    "bits",
+    "scheme",
+    "group_size",
+    "dist_type",
+    "theoretical_max_err",
+    "measured_max_err",
+    "sqnr_db",
+    "theoretical_sqnr_db",
+    "effective_bytes_per_elem"
+  ],
+  "num_rows": 90
+}

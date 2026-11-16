@@ -6,15 +6,36 @@ from typing import Literal
 
 @dataclass(frozen=True)
 class QuantConfig:
-    """Global quantization configuration."""
+    """Global quantization configuration for K and V separately."""
 
-    group_size: int = 128
-    bits: int = 4
-    hadamard: bool = True
-    qjl_sketch: int = 0  # 0 = disabled
+    # Bit-width (16 = no quantization)
+    k_bits: Literal[16, 8, 6, 4, 2] = 16
+    v_bits: Literal[16, 8, 6, 4, 2] = 16
+
+    # Quantization scheme
+    k_scheme: Literal["sym", "asym"] = "sym"
+    v_scheme: Literal["sym", "asym"] = "asym"
+
+    # Encoding type for K
+    k_encoding: Literal["int", "fp8_e4m3"] = "int"
+
+    # Group size for block quantization
+    group_size: Literal[32, 64, 128] = 64
+
+    # Per-channel quantization for K
+    k_per_channel: bool = False
+
+    # Quantization stage relative to RoPE
+    k_quant_stage: Literal["post_rope", "pre_rope"] = "post_rope"
+
+    # Fast Walsh-Hadamard + Rademacher rotation on Q and K
+    use_hadamard: bool = False
+
+    # 1-bit QJL sign sketch on K residual
+    use_qjl_residual: bool = False
+
+    # Sink tokens (always FP16, never quantized)
     sink_tokens: int = 4
-    page_size: int = 256
-    dtype: Literal["fp16", "bf16"] = "fp16"
 
 
 @dataclass(frozen=True)

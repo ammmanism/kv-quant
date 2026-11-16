@@ -80,6 +80,7 @@ def check_figure(png_path: Path) -> tuple[bool, list[str]]:
         with Image.open(png_path) as img:
             width, height = img.size
             dpi = img.info.get("dpi", (72, 72))[0]  # default 72 if not set
+            dpi = round(dpi)  # PIL stores DPI as float with rounding error
 
             if width != meta["width_px"]:
                 errors.append(f"Width mismatch: meta={meta['width_px']}, actual={width}")

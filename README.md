@@ -56,6 +56,21 @@ kv-quant/
 └── Makefile            # Verification targets
 ```
 
+## Phase 1 Results
+
+All numeric results below are cited to committed CSV artifacts under `bench/data/` (Invariant 1).
+
+- **4-bit symmetric SQNR (normal distribution, group_size=64):** 16.99 dB
+  [#p1_sqnr_error_bounds.csv:sqnr_db]
+- **Maximum post-Hadamard kurtosis** across tested outlier configurations (vs pre-Hadamard peak > 10):
+  [#p1_hadamard_qjl_ablation.csv:post_hadamard_kurtosis]
+- **INT2 vs INT2+QJL inner-product MSE** comparison:
+  [#p1_hadamard_qjl_ablation.csv:inner_prod_mse_no_qjl], [#p1_hadamard_qjl_ablation.csv:inner_prod_mse_with_qjl]
+
+Figure [`docs/figures/fig1_outliers_hadamard_qjl.png`](docs/figures/fig1_outliers_hadamard_qjl.png)
+shows outlier smoothing (Panel A), SQNR vs bit-width (Panel B), and inner-product MSE (Panel C).
+Its provenance metadata records generating script, source CSV hashes, and 300 DPI dimensions.
+
 ## CI Gates (8 Required)
 
 | Gate | Command | Invariant |

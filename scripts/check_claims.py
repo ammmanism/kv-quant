@@ -47,7 +47,7 @@ def resolve_claim(ref: str) -> tuple[Path | None, str | None]:
     if not csv_path.exists():
         return None, f"CSV not found: {csv_path}"
 
-    return csv_path, spec
+    return csv_path, None
 
 
 def verify_claim(csv_path: Path, spec: str) -> tuple[bool, str]:
