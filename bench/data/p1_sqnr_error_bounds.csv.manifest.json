@@ -1,6 +1,6 @@
 {
   "file": "p1_sqnr_error_bounds.csv",
-  "sha256": "e96aa9cb3d04950bb8fb120e71d98fa727317f6c8478067ae51963422d1a7c03",
+  "sha256": "59270534873944181ee0bf655a63518df3e15277638983a1e8c69a3610000742",
   "description": "SQNR and quantization error bounds for INT2/4/6/8/16 across schemes and distributions",
   "generated_by": "scripts/generate_phase1_artifacts.py",
   "columns": [

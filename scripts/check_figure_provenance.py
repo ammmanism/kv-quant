@@ -28,8 +28,13 @@ REQUIRED_META_FIELDS = [
 
 
 def compute_sha256(path: Path) -> str:
-    """Compute SHA256 of a file."""
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    """Compute SHA256 with normalized line endings (cross-platform stable).
+
+    Git may check out CRLF on Windows but LF on Linux; normalizing ensures the
+    committed hash matches on every platform.
+    """
+    data = path.read_bytes().replace(b"\r\n", b"\n")
+    return hashlib.sha256(data).hexdigest()
 
 
 def check_figure(png_path: Path) -> tuple[bool, list[str]]:

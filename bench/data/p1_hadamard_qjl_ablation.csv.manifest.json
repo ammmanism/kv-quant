@@ -1,6 +1,6 @@
 {
   "file": "p1_hadamard_qjl_ablation.csv",
-  "sha256": "a555498421c9d1bc315298cf9d2c18540768b10ee7d0f6870260d98c6562c120",
+  "sha256": "b4bd68b16236209e40bffeed736d84cef2f3f813844ede06e10c6a99018fb8f3",
   "description": "Hadamard rotation and QJL residual sketch ablation: kurtosis, SQNR, inner-product MSE",
   "generated_by": "scripts/generate_phase1_artifacts.py",
   "columns": [

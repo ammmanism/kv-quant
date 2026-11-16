@@ -41,7 +41,8 @@ FIG_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    # Normalize line endings so the committed hash is stable across platforms
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
 def write_manifest(csv_path: Path, description: str) -> Path:
