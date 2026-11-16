@@ -71,6 +71,18 @@ Figure [`docs/figures/fig1_outliers_hadamard_qjl.png`](docs/figures/fig1_outlier
 shows outlier smoothing (Panel A), SQNR vs bit-width (Panel B), and inner-product MSE (Panel C).
 Its provenance metadata records generating script, source CSV hashes, and 300 DPI dimensions.
 
+### Phase 2: Hybrid Cache
+- **Per-head distant attention mass** used for retrieval/streaming head classification:
+  [#p2_head_sensitivity_map.csv:distant_attn_mass]
+- **Assigned K/V bits per head** under the 3.5-bit adaptive schedule:
+  [#p2_head_sensitivity_map.csv:assigned_k_bits], [#p2_head_sensitivity_map.csv:assigned_v_bits]
+- **Multi-agent KV VRAM compression factor** with CoW prefix sharing:
+  [#p2_cow_prefix_memory.csv:compression_factor]
+
+Figure [`docs/figures/fig2_head_bimodality_and_cow.png`](docs/figures/fig2_head_bimodality_and_cow.png)
+shows head bimodality (Panel A) and multi-agent VRAM scaling (Panel B).
+A deterministic micro-activation fixture is committed at `bench/activations/micro_kv_2k.pt`.
+
 ## CI Gates (8 Required)
 
 | Gate | Command | Invariant |

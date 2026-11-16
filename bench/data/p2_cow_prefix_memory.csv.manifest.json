@@ -1,0 +1,17 @@
+{
+  "file": "p2_cow_prefix_memory.csv",
+  "sha256": "5ccc508421e8a2c35e132a8a7a02bf002b5c3cf327aad6ba5f16f30336c5c346",
+  "description": "Multi-agent KV VRAM scaling: FP16 vs CoW sharing vs K8V4 vs adaptive 3.5-bit",
+  "generated_by": "scripts/generate_phase2_artifacts.py",
+  "columns": [
+    "num_concurrent_agents",
+    "shared_prefix_len",
+    "unique_tail_len",
+    "fp16_no_cow_mb",
+    "fp16_cow_mb",
+    "k8v4_cow_mb",
+    "adaptive_3_5b_cow_mb",
+    "compression_factor"
+  ],
+  "num_rows": 5
+}

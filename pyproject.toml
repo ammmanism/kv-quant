@@ -68,7 +68,7 @@ select = [
 # - PTH123: stdlib open() used for JSON manifest writing
 ignore = [
     "PLR2004", "PLR0912", "PLR0913", "PLR0917",
-    "ARG001", "ERA001", "TRY003", "TRY300", "E501",
+    "ARG001", "ARG002", "ERA001", "TRY003", "TRY300", "E501",
     "PLC0415", "F841", "B007", "B905", "B006", "PTH123",
 ]
 

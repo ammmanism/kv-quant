@@ -1,0 +1,17 @@
+{
+  "file": "p2_head_sensitivity_map.csv",
+  "sha256": "960d56927732cbc7d02299035c605187d255274354d5416957c4a3eda4052e4c",
+  "description": "Per-head distant attention mass, entropy, INT4 KL sensitivity and assigned bit schedule",
+  "generated_by": "scripts/generate_phase2_artifacts.py",
+  "columns": [
+    "layer_idx",
+    "kv_head_idx",
+    "head_class",
+    "distant_attn_mass",
+    "attn_entropy",
+    "kl_sensitivity",
+    "assigned_k_bits",
+    "assigned_v_bits"
+  ],
+  "num_rows": 96
+}
