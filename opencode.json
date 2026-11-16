@@ -1,0 +1,67 @@
+{
+  "permission": {
+    "edit": "ask",
+    "bash": {
+      "pytest *": "allow",
+      "ruff *": "allow",
+      "mypy *": "allow",
+      "make verify": "allow",
+      "python scripts/*": "allow",
+      "python -m kv_quant.*": "allow",
+      "python -m bench.*": "allow"
+    }
+  },
+  "agents": {
+    "quant-core": {
+      "model": "opus",
+      "class": "opus-class",
+      "owns": [
+        "kv_quant/config.py",
+        "kv_quant/layout.py",
+        "kv_quant/quantizer.py",
+        "kv_quant/hadamard.py",
+        "kv_quant/qjl_sketch.py",
+        "kv_quant/profiler.py",
+        "kv_quant/cache.py",
+        "kv_quant/wrapper.py",
+        "kv_quant/vram.py",
+        "kv_quant/advisor.py"
+      ]
+    },
+    "kv-kernel": {
+      "model": "opus",
+      "class": "opus-class",
+      "owns": [
+        "kv_quant/kernels/"
+      ]
+    },
+    "harness": {
+      "model": "mid-tier",
+      "class": "mid-tier",
+      "owns": [
+        "tasks/",
+        "bench/",
+        "sweeps/",
+        "scripts/"
+      ]
+    },
+    "planner": {
+      "model": "opus",
+      "class": "opus-class",
+      "owns": [
+        "rfc/*.md",
+        "docs/*.md"
+      ]
+    },
+    "adversary": {
+      "model": "different-family",
+      "class": "different-model-family",
+      "permission": {
+        "edit": {
+          "rfc/reviews/**": "allow",
+          "*": "deny"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+"""Invariant 3: Single Layout Contract.
+
+kv_quant/layout.py is the single source of truth for bit masks, shifts,
+QJL sketch words, and byte-accounting equations.
+
+This script verifies the current layout matches the committed golden hash.
+"""
+
+import hashlib
+import sys
+from pathlib import Path
+
+# Add parent to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from kv_quant.layout import (
+    LAYOUT_GOLDEN_HASH,
+    LAYOUT_VERSION,
+)
+
+
+def compute_current_hash() -> str:
+    """Compute hash of current layout constants."""
+    from kv_quant.layout import (
+        BITS_PER_QUANT,
+        GROUP_SIZE,
+        HIGH_NIBBLE_MASK,
+        HIGH_NIBBLE_SHIFT,
+        LOW_NIBBLE_MASK,
+        LOW_NIBBLE_SHIFT,
+        PAGE_SIZE,
+        QJL_SEED,
+        QJL_SKETCH_WORDS,
+        SINK_TOKENS,
+    )
+
+    parts = [
+        str(BITS_PER_QUANT),
+        str(GROUP_SIZE),
+        str(PAGE_SIZE),
+        str(SINK_TOKENS),
+        str(QJL_SKETCH_WORDS),
+        str(QJL_SEED),
+        str(LOW_NIBBLE_MASK),
+        str(HIGH_NIBBLE_MASK),
+        str(LOW_NIBBLE_SHIFT),
+        str(HIGH_NIBBLE_SHIFT),
+    ]
+    data = "|".join(parts).encode()
+    return hashlib.sha256(data).hexdigest()
+
+
+def main() -> int:
+    print(f"Layout version: {LAYOUT_VERSION}")
+    print(f"Golden hash:    {LAYOUT_GOLDEN_HASH}")
+
+    current_hash = compute_current_hash()
+    print(f"Current hash:   {current_hash}")
+
+    if current_hash == LAYOUT_GOLDEN_HASH:
+        print("\n[OK] Layout matches golden hash - no drift detected")
+        return 0
+    else:
+        print("\n[FAIL] LAYOUT DRIFT DETECTED!")
+        print("   The layout constants in kv_quant/layout.py have changed.")
+        print("   If intentional, update LAYOUT_GOLDEN_HASH and LAYOUT_VERSION.")
+        print("   If accidental, revert the changes to layout.py.")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

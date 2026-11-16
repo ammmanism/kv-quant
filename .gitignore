@@ -1,0 +1,51 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment files
+.env
+.env.local
+
+# Type checking caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Bench data temporary files
+bench/data/tmp/
+
+# CUDA profiling artifacts
+*.ncu-rep
+*.nsys-rep
+*.sqlite
+*_cuda_*.log
+nvprof_*
+nsys_*
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# UV
+uv.lock
+
+# Coverage
+.coverage
+htmlcov/

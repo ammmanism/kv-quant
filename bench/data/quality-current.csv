@@ -1,0 +1,5 @@
+metric,value,concurrency,isl,osl,model
+accuracy,0.95,1,128,32,meta-llama/Llama-2-7b-hf
+vram_mib,1024.0,1,128,32,meta-llama/Llama-2-7b-hf
+latency_ms,45.2,1,128,32,meta-llama/Llama-2-7b-hf
+throughput_tps,1250.0,1,128,32,meta-llama/Llama-2-7b-hf
