@@ -1,8 +1,8 @@
 {
   "generating_script": "scripts/generate_phase1_artifacts.py",
   "source_csvs": [
-    "bench\\data\\p1_sqnr_error_bounds.csv",
-    "bench\\data\\p1_hadamard_qjl_ablation.csv"
+    "bench/data/p1_sqnr_error_bounds.csv",
+    "bench/data/p1_hadamard_qjl_ablation.csv"
   ],
   "csv_hashes": [
     "e96aa9cb3d04950bb8fb120e71d98fa727317f6c8478067ae51963422d1a7c03",

@@ -17,6 +17,11 @@ except ImportError:
     dequant_fused = None
     HAS_TRITON = False
 
+# Triton kernels require a CUDA device to compile and launch. CI runners are
+# CPU-only, so fused-vs-naive parity can only run on GPU hosts.
+HAS_CUDA = torch.cuda.is_available()
+CAN_RUN_PARITY = HAS_TRITON and HAS_CUDA
+
 
 @pytest.fixture
 def layout() -> PageLayout:
@@ -70,8 +75,8 @@ def make_test_page(layout: PageLayout, device: str) -> tuple[torch.Tensor, list[
     # but part of the packed format
     meta_bytes_per_group = 3  # fp16 + uint8
     for g in range(groups_per_page):
-        # Scale (fp16)
-        scale_bytes = torch.tensor(0.05, dtype=torch.float16, device=device).view(torch.uint8)
+        # Scale (fp16) - use 1-D tensor so view to uint8 works on all platforms
+        scale_bytes = torch.tensor([0.05], dtype=torch.float16, device=device).view(torch.uint8)
         packed[quant_offset:quant_offset + 2] = scale_bytes
         quant_offset += 2
         # Zero point (uint8)
@@ -83,8 +88,8 @@ def make_test_page(layout: PageLayout, device: str) -> tuple[torch.Tensor, list[
 
 def test_dequant_parity_synthetic(layout: PageLayout, device: str):
     """Test fused vs naive dequant on synthetic data."""
-    if not HAS_TRITON:
-        pytest.skip("Triton not available")
+    if not CAN_RUN_PARITY:
+        pytest.skip("Triton kernel parity requires Triton + CUDA device")
     packed, params_list = make_test_page(layout, device)
 
     # Run both implementations
@@ -100,8 +105,8 @@ def test_dequant_parity_synthetic(layout: PageLayout, device: str):
 
 def test_dequant_parity_random(layout: PageLayout, device: str):
     """Test fused vs naive dequant on random data."""
-    if not HAS_TRITON:
-        pytest.skip("Triton not available")
+    if not CAN_RUN_PARITY:
+        pytest.skip("Triton kernel parity requires Triton + CUDA device")
     torch.manual_seed(42)
 
     page_size = layout.page_size
@@ -132,7 +137,7 @@ def test_dequant_parity_gpu(layout: PageLayout):
     """GPU-specific parity test."""
     if not torch.cuda.is_available():
         pytest.skip("CUDA not available")
-    if not HAS_TRITON:
-        pytest.skip("Triton not available")
+    if not CAN_RUN_PARITY:
+        pytest.skip("Triton kernel parity requires Triton + CUDA device")
     test_dequant_parity_synthetic(layout, "cuda")
     test_dequant_parity_random(layout, "cuda")

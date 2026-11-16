@@ -7,13 +7,13 @@ Rotating post-RoPE Q' = Q S H_D and K' = K S H_D preserves exact inner products
 <Q', K'> = <Q, K> while reducing channel kurtosis from κ > 25 to κ ≈ 3.0.
 """
 
+
 import torch
-from typing import Optional
 
 
 def hadamard_transform(
     x: torch.Tensor,
-    generator: Optional[torch.Generator] = None,
+    generator: torch.Generator | None = None,
     normalize: bool = True,
 ) -> torch.Tensor:
     """
@@ -41,7 +41,7 @@ def hadamard_transform(
     # FWHT butterfly algorithm - use standard iterative approach
     # Must clone slices to avoid view aliasing issues during in-place updates
     h = x.clone()
-    
+
     step = 1
     while step < d:
         for i in range(0, d, 2 * step):
@@ -61,7 +61,7 @@ def hadamard_transform(
 
 def inverse_hadamard_transform(
     x: torch.Tensor,
-    generator: Optional[torch.Generator] = None,
+    generator: torch.Generator | None = None,
     normalize: bool = True,
 ) -> torch.Tensor:
     """
@@ -84,7 +84,7 @@ def inverse_hadamard_transform(
 
 def rademacher_rotation(
     x: torch.Tensor,
-    generator: Optional[torch.Generator] = None,
+    generator: torch.Generator | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Apply random Rademacher sign flips S = diag(±1) to the last dimension.
@@ -112,7 +112,7 @@ def rademacher_rotation(
 
 def hadamard_rademacher_transform(
     x: torch.Tensor,
-    generator: Optional[torch.Generator] = None,
+    generator: torch.Generator | None = None,
     normalize: bool = True,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
@@ -142,7 +142,7 @@ def hadamard_rademacher_transform(
 def hadamard_rademacher_inverse(
     x: torch.Tensor,
     signs: torch.Tensor,
-    generator: Optional[torch.Generator] = None,
+    generator: torch.Generator | None = None,
     normalize: bool = True,
 ) -> torch.Tensor:
     """
@@ -196,7 +196,7 @@ def compute_kurtosis(x: torch.Tensor, dim: int = -1) -> torch.Tensor:
 
 def verify_orthogonality(
     x: torch.Tensor,
-    generator: Optional[torch.Generator] = None,
+    generator: torch.Generator | None = None,
     atol: float = 1e-5,
 ) -> bool:
     """

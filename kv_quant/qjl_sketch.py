@@ -7,10 +7,10 @@ and provide the unbiased estimator:
     <q, r>_QJL = sqrt(π/2) / D * ||r||_2 * <S q, z_k>
 """
 
-import torch
 import math
-from typing import Optional, Tuple
 from dataclasses import dataclass
+
+import torch
 
 
 @dataclass(frozen=True)
@@ -27,8 +27,8 @@ class QJLSketch:
 def generate_rademacher_projection(
     dim: int,
     num_words: int,
-    generator: Optional[torch.Generator] = None,
-    device: Optional[torch.device] = None,
+    generator: torch.Generator | None = None,
+    device: torch.device | None = None,
 ) -> torch.Tensor:
     """
     Generate Rademacher projection matrix S ∈ {-1, +1}^(num_words*32, dim).
@@ -58,8 +58,8 @@ def generate_rademacher_projection(
 def generate_gaussian_projection(
     dim: int,
     num_words: int,
-    generator: Optional[torch.Generator] = None,
-    device: Optional[torch.device] = None,
+    generator: torch.Generator | None = None,
+    device: torch.device | None = None,
 ) -> torch.Tensor:
     """
     Generate Gaussian projection matrix S ∈ R^(num_words*32, dim).
@@ -84,8 +84,8 @@ def generate_gaussian_projection(
 
 def compute_qjl_sketch(
     residual: torch.Tensor,
-    projection: Optional[torch.Tensor] = None,
-    generator: Optional[torch.Generator] = None,
+    projection: torch.Tensor | None = None,
+    generator: torch.Generator | None = None,
     use_rademacher: bool = True,
 ) -> QJLSketch:
     """
@@ -154,8 +154,8 @@ def compute_qjl_sketch(
 def estimate_qjl_inner_product(
     q: torch.Tensor,
     sketch: QJLSketch,
-    projection: Optional[torch.Tensor] = None,
-    generator: Optional[torch.Generator] = None,
+    projection: torch.Tensor | None = None,
+    generator: torch.Generator | None = None,
     use_rademacher: bool = True,
 ) -> torch.Tensor:
     """
@@ -215,8 +215,8 @@ def estimate_attention_logits_qjl(
     k_quantized: torch.Tensor,
     k_dequantized: torch.Tensor,
     sketch: QJLSketch,
-    projection: Optional[torch.Tensor] = None,
-    generator: Optional[torch.Generator] = None,
+    projection: torch.Tensor | None = None,
+    generator: torch.Generator | None = None,
 ) -> torch.Tensor:
     """
     Estimate attention logits with QJL residual correction.

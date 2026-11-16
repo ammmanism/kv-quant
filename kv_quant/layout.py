@@ -11,7 +11,6 @@ where I_x is 1 if feature x is enabled else 0.
 from dataclasses import dataclass
 from typing import Final
 
-
 # ─── Bit-width constants ───
 # INT4: 2 nibbles per byte
 INT4_VALUES_PER_BYTE: Final[int] = 2

@@ -57,14 +57,14 @@ def check_figure(png_path: Path) -> tuple[bool, list[str]]:
     if errors:
         return False, errors
 
-    # Verify generating script exists
-    script_path = Path(meta["generating_script"])
+    # Verify generating script exists (normalize separators for cross-platform)
+    script_path = Path(meta["generating_script"].replace("\\", "/"))
     if not script_path.exists():
         errors.append(f"Generating script not found: {script_path}")
 
-    # Verify source CSVs exist and hashes match
+    # Verify source CSVs exist and hashes match (normalize separators)
     for csv_rel, expected_hash in zip(meta["source_csvs"], meta["csv_hashes"]):
-        csv_path = Path(csv_rel)
+        csv_path = Path(csv_rel.replace("\\", "/"))
         if not csv_path.exists():
             errors.append(f"Source CSV not found: {csv_path}")
         else:

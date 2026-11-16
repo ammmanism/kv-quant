@@ -14,20 +14,25 @@ import json
 import sys
 from pathlib import Path
 
+import matplotlib
 import numpy as np
 import pandas as pd
 import torch
-import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from kv_quant.hadamard import compute_kurtosis, hadamard_transform
 from kv_quant.quantizer import (
-    quantize_group, dequantize_group, theoretical_max_error,
-    theoretical_sqnr_db, compute_sqnr_db, compute_max_error,
+    compute_max_error,
+    compute_sqnr_db,
+    dequantize_group,
+    quantize_group,
+    theoretical_max_error,
+    theoretical_sqnr_db,
 )
-from kv_quant.hadamard import hadamard_transform, compute_kurtosis
 
 DATA_DIR = Path("bench/data")
 FIG_DIR = Path("docs/figures")
@@ -254,7 +259,7 @@ def generate_figure(sqnr_csv: Path, ablation_csv: Path) -> Path:
     # Provenance metadata (Invariant 2)
     meta = {
         "generating_script": "scripts/generate_phase1_artifacts.py",
-        "source_csvs": [str(sqnr_csv), str(ablation_csv)],
+        "source_csvs": [sqnr_csv.as_posix(), ablation_csv.as_posix()],
         "csv_hashes": [sha256(sqnr_csv), sha256(ablation_csv)],
         "width_px": width,
         "height_px": height,

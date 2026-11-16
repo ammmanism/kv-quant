@@ -4,18 +4,15 @@ Implements symmetric/asymmetric block quantization for K and V with support for
 INT4, INT2, INT8, FP8, and optional Hadamard rotation and QJL residual sketch.
 """
 
-import torch
-import math
 from dataclasses import dataclass
-from typing import Literal, Optional, Tuple
+from typing import Literal
+
+import torch
+
 from kv_quant.config import QuantConfig
-from kv_quant.layout import bytes_per_element, PageLayout, get_layout
-from kv_quant.hadamard import hadamard_rademacher_transform, hadamard_rademacher_inverse
+from kv_quant.hadamard import hadamard_rademacher_transform
 from kv_quant.qjl_sketch import (
     QJLSketch,
-    compute_qjl_sketch,
-    estimate_qjl_inner_product,
-    QJL_SCALE_FACTOR,
 )
 
 
@@ -26,15 +23,15 @@ class QuantParams:
     zero_point: torch.Tensor  # UINT8, shape () - only for asymmetric
     original_size: int = 0    # Original tensor size (for unpack padding)
     # For QJL
-    qjl_sketch: Optional[QJLSketch] = None
-    qjl_projection: Optional[torch.Tensor] = None
+    qjl_sketch: QJLSketch | None = None
+    qjl_projection: torch.Tensor | None = None
 
 
 def _quantize_symmetric(
     x: torch.Tensor,
     bits: int,
-    generator: Optional[torch.Generator] = None,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+    generator: torch.Generator | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Symmetric quantization: x_q = round(x / scale), scale = max(|x|) / (2^(bits-1) - 1).
 
@@ -64,8 +61,8 @@ def _quantize_symmetric(
 def _quantize_asymmetric(
     x: torch.Tensor,
     bits: int,
-    generator: Optional[torch.Generator] = None,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    generator: torch.Generator | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Asymmetric quantization: x_q = round(x / scale) + zero_point.
 
@@ -250,8 +247,8 @@ def quantize_group(
     x: torch.Tensor,
     bits: int,
     scheme: Literal["sym", "asym"],
-    generator: Optional[torch.Generator] = None,
-) -> Tuple[torch.Tensor, QuantParams]:
+    generator: torch.Generator | None = None,
+) -> tuple[torch.Tensor, QuantParams]:
     """
     Quantize a single group.
 
@@ -359,8 +356,8 @@ def dequantize_group(
 def quantize_k(
     k: torch.Tensor,
     config: QuantConfig,
-    generator: Optional[torch.Generator] = None,
-) -> Tuple[torch.Tensor, list[QuantParams], Optional[list[QJLSketch]]]:
+    generator: torch.Generator | None = None,
+) -> tuple[torch.Tensor, list[QuantParams], list[QJLSketch] | None]:
     """
     Quantize K tensor with optional Hadamard and QJL.
 
@@ -434,8 +431,8 @@ def quantize_k(
 def quantize_v(
     v: torch.Tensor,
     config: QuantConfig,
-    generator: Optional[torch.Generator] = None,
-) -> Tuple[torch.Tensor, list[QuantParams]]:
+    generator: torch.Generator | None = None,
+) -> tuple[torch.Tensor, list[QuantParams]]:
     """
     Quantize V tensor.
 

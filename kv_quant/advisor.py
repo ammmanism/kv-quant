@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from typing import Literal
 
+import torch
+
 from kv_quant.config import CacheConfig, QuantConfig
 from kv_quant.vram import VRAMBreakdown
 

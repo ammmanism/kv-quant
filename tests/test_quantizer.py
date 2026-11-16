@@ -1,40 +1,35 @@
 """Property-based tests for quantizer, Hadamard, and QJL."""
 
-import math
 import pytest
 import torch
-from hypothesis import given, settings, strategies as st, assume
-from kv_quant.quantizer import (
-    quantize_group,
-    dequantize_group,
-    theoretical_max_error,
-    theoretical_sqnr_db,
-    compute_sqnr_db,
-    compute_max_error,
-    pack_int4,
-    unpack_int4,
-    pack_int2,
-    unpack_int2,
-    _quantize_symmetric,
-    _quantize_asymmetric,
-)
+from hypothesis import assume, given, settings
+from hypothesis import strategies as st
+from kv_quant.config import QuantConfig
 from kv_quant.hadamard import (
+    compute_kurtosis,
+    hadamard_rademacher_inverse,
+    hadamard_rademacher_transform,
     hadamard_transform,
     inverse_hadamard_transform,
-    hadamard_rademacher_transform,
-    hadamard_rademacher_inverse,
-    verify_orthogonality,
-    compute_kurtosis,
 )
 from kv_quant.qjl_sketch import (
     compute_qjl_sketch,
     estimate_qjl_inner_product,
     pack_qjl_signs,
     unpack_qjl_signs,
-    QJL_SCALE_FACTOR,
 )
-from kv_quant.config import QuantConfig
-
+from kv_quant.quantizer import (
+    compute_max_error,
+    compute_sqnr_db,
+    dequantize_group,
+    pack_int2,
+    pack_int4,
+    quantize_group,
+    theoretical_max_error,
+    theoretical_sqnr_db,
+    unpack_int2,
+    unpack_int4,
+)
 
 # ─── Hypothesis Strategies ───
 
@@ -145,7 +140,7 @@ class TestQuantizeDequantize:
         # Compute noise
         noise = x_normalized - x_recon
         noise_power = (noise ** 2).mean().item()
-        
+
         # Skip if noise is zero (perfect reconstruction = infinite SQNR)
         # Use higher threshold due to FP16 precision
         assume(noise_power > 1e-5)
@@ -272,7 +267,7 @@ class TestHadamard:
         """Hadamard-Rademacher transform should preserve inner products."""
         # Use a fixed seed for reproducibility across the test
         torch.manual_seed(42)
-        
+
         # Generate q and k with same shape inside the test (not via hypothesis strategies)
         q = torch.randn(rows, dim, dtype=torch.float32)
         k = torch.randn(rows, dim, dtype=torch.float32)
@@ -302,7 +297,7 @@ class TestHadamard:
         # Skip inputs that are too uniform (all zeros or constant)
         x_float = x.to(torch.float32)
         assume(x_float.std(dim=-1).mean() > 1e-3)  # Need some variance
-        
+
         # Create heavy-tailed input (mixture with outliers)
         outlier_mask = torch.rand_like(x_float) < 0.01
         x_heavy = x_float.clone()
@@ -348,7 +343,7 @@ class TestQJLSketch:
     def test_unbiased_estimator(self, size: int):
         """QJL inner product estimator should be approximately unbiased."""
         torch.manual_seed(123)
-        
+
         # Generate q and r with the same size
         q = torch.randn(size, dtype=torch.float16)
         r = torch.randn(size, dtype=torch.float16)
@@ -555,8 +550,8 @@ def test_generate_sqnr_csv(tmp_path):
 
 def test_generate_hadamard_qjl_ablation_csv(tmp_path):
     """Generate Hadamard + QJL ablation data for CSV."""
-    import pandas as pd
     import numpy as np
+    import pandas as pd
 
     results = []
     torch.manual_seed(42)
