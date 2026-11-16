@@ -79,8 +79,7 @@ def test_byte_accounting_formula():
 def test_page_bytes():
     """Verify page byte accounting is consistent."""
     layout = get_layout()
-    pb = page_bytes(4, layout.group_size, False, False,
-                    layout.page_size, layout.sink_tokens)
+    pb = page_bytes(4, layout.group_size, False, False, layout.page_size, layout.sink_tokens)
     # Should be positive and larger than pure quant payload
     assert pb > 0
     assert pb >= layout.quant_tokens * 4 // 8

@@ -51,7 +51,9 @@ def check_review_file(review_path: Path) -> tuple[bool, list[str]]:
         i += 1
 
     if not findings:
-        errors.append("No findings found in review file (expected format: '- [ ] **Finding**: ...' followed by '- **Resolution**: ...')")
+        errors.append(
+            "No findings found in review file (expected format: '- [ ] **Finding**: ...' followed by '- **Resolution**: ...')"
+        )
         return False, errors
 
     unresolved = 0
@@ -63,7 +65,9 @@ def check_review_file(review_path: Path) -> tuple[bool, list[str]]:
             # Verify resolution marker exists in resolution text
             has_resolution = any(re.search(p, resolution) for p in RESOLUTION_PATTERNS)
             if not has_resolution:
-                errors.append(f"Resolved finding missing resolution marker: {finding} | Resolution: {resolution}")
+                errors.append(
+                    f"Resolved finding missing resolution marker: {finding} | Resolution: {resolution}"
+                )
 
     return unresolved == 0 and len(errors) == 0, errors
 

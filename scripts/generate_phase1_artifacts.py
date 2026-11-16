@@ -94,23 +94,30 @@ def generate_sqnr_csv() -> Path:
                     theoretical_sqnr = theoretical_sqnr_db(bits)
                     bytes_per_elem = (bits / 8) + (2 * (1 + (scheme == "asym")) / group_size)
 
-                    results.append({
-                        "config_id": f"{bits}b_{scheme}_{dist_type}_g{group_size}",
-                        "bits": bits,
-                        "scheme": scheme,
-                        "group_size": group_size,
-                        "dist_type": dist_type,
-                        "theoretical_max_err": round(theoretical_max, 6),
-                        "measured_max_err": round(max_err, 6),
-                        "sqnr_db": round(sqnr, 3) if np.isfinite(sqnr) else 999.0,
-                        "theoretical_sqnr_db": round(theoretical_sqnr, 3) if np.isfinite(theoretical_sqnr) else 999.0,
-                        "effective_bytes_per_elem": round(bytes_per_elem, 4),
-                    })
+                    results.append(
+                        {
+                            "config_id": f"{bits}b_{scheme}_{dist_type}_g{group_size}",
+                            "bits": bits,
+                            "scheme": scheme,
+                            "group_size": group_size,
+                            "dist_type": dist_type,
+                            "theoretical_max_err": round(theoretical_max, 6),
+                            "measured_max_err": round(max_err, 6),
+                            "sqnr_db": round(sqnr, 3) if np.isfinite(sqnr) else 999.0,
+                            "theoretical_sqnr_db": round(theoretical_sqnr, 3)
+                            if np.isfinite(theoretical_sqnr)
+                            else 999.0,
+                            "effective_bytes_per_elem": round(bytes_per_elem, 4),
+                        }
+                    )
 
     df = pd.DataFrame(results)
     csv_path = DATA_DIR / "p1_sqnr_error_bounds.csv"
     df.to_csv(csv_path, index=False)
-    write_manifest(csv_path, "SQNR and quantization error bounds for INT2/4/6/8/16 across schemes and distributions")
+    write_manifest(
+        csv_path,
+        "SQNR and quantization error bounds for INT2/4/6/8/16 across schemes and distributions",
+    )
     return csv_path
 
 
@@ -145,7 +152,7 @@ def generate_ablation_csv() -> Path:
                 k_flat = k_proc.reshape(-1)
                 sqnrs = []
                 for chunk in range(0, min(len(k_flat), 4096), 256):
-                    channel = k_flat[chunk:chunk + 256]
+                    channel = k_flat[chunk : chunk + 256]
                     packed, params = quantize_group(channel, bits, "sym")
                     recon = dequantize_group(packed, params, bits, "sym")
                     sqnrs.append(compute_sqnr_db(channel, recon))
@@ -157,9 +164,9 @@ def generate_ablation_csv() -> Path:
                 kq_flat = kq.reshape(-1)
                 kq_recon = torch.empty_like(kq_flat)
                 for chunk in range(0, len(kq_flat), 256):
-                    channel = kq_flat[chunk:chunk + 256]
+                    channel = kq_flat[chunk : chunk + 256]
                     packed, params = quantize_group(channel, bits, "sym")
-                    kq_recon[chunk:chunk + 256] = dequantize_group(packed, params, bits, "sym")
+                    kq_recon[chunk : chunk + 256] = dequantize_group(packed, params, bits, "sym")
                 kq_recon = kq_recon.reshape(k.shape)
 
                 true_logits = q @ k.T
@@ -173,21 +180,26 @@ def generate_ablation_csv() -> Path:
                 qjl_var_reduction = min(0.6, 0.3 + outlier_ratio * 10)
                 ip_mse_with_qjl = ip_mse * (1 - qjl_var_reduction)
 
-                results.append({
-                    "config_id": f"out{outlier_ratio:.3f}_b{bits}_H{int(use_hadamard)}",
-                    "outlier_ratio": outlier_ratio,
-                    "pre_kurtosis": round(pre_kurt, 4),
-                    "post_hadamard_kurtosis": round(post_kurt, 4),
-                    "sqnr_no_hadamard_db": round(sqnr, 3) if not use_hadamard else "",
-                    "sqnr_with_hadamard_db": round(sqnr, 3) if use_hadamard else "",
-                    "inner_prod_mse_no_qjl": round(ip_mse, 6),
-                    "inner_prod_mse_with_qjl": round(ip_mse_with_qjl, 6),
-                })
+                results.append(
+                    {
+                        "config_id": f"out{outlier_ratio:.3f}_b{bits}_H{int(use_hadamard)}",
+                        "outlier_ratio": outlier_ratio,
+                        "pre_kurtosis": round(pre_kurt, 4),
+                        "post_hadamard_kurtosis": round(post_kurt, 4),
+                        "sqnr_no_hadamard_db": round(sqnr, 3) if not use_hadamard else "",
+                        "sqnr_with_hadamard_db": round(sqnr, 3) if use_hadamard else "",
+                        "inner_prod_mse_no_qjl": round(ip_mse, 6),
+                        "inner_prod_mse_with_qjl": round(ip_mse_with_qjl, 6),
+                    }
+                )
 
     df = pd.DataFrame(results)
     csv_path = DATA_DIR / "p1_hadamard_qjl_ablation.csv"
     df.to_csv(csv_path, index=False)
-    write_manifest(csv_path, "Hadamard rotation and QJL residual sketch ablation: kurtosis, SQNR, inner-product MSE")
+    write_manifest(
+        csv_path,
+        "Hadamard rotation and QJL residual sketch ablation: kurtosis, SQNR, inner-product MSE",
+    )
     return csv_path
 
 
@@ -208,9 +220,16 @@ def generate_figure(sqnr_csv: Path, ablation_csv: Path) -> Path:
     k_absmax = k.abs().mean().item()
 
     ax = axes[0]
-    im = ax.imshow(k[:32, :].numpy(), aspect="auto", cmap="RdBu_r",
-                   vmin=-min(10, k_absmax), vmax=min(10, k_absmax))
-    ax.set_title(f"A: Post-RoPE Channel Outliers\n(kurtosis={compute_kurtosis(k, dim=-1).mean().item():.1f})")
+    im = ax.imshow(
+        k[:32, :].numpy(),
+        aspect="auto",
+        cmap="RdBu_r",
+        vmin=-min(10, k_absmax),
+        vmax=min(10, k_absmax),
+    )
+    ax.set_title(
+        f"A: Post-RoPE Channel Outliers\n(kurtosis={compute_kurtosis(k, dim=-1).mean().item():.1f})"
+    )
     ax.set_xlabel("Channel")
     ax.set_ylabel("Token")
     fig.colorbar(im, ax=ax, fraction=0.046)
@@ -218,8 +237,11 @@ def generate_figure(sqnr_csv: Path, ablation_csv: Path) -> Path:
     # Panel B: SQNR vs bit-width
     ax = axes[1]
     for dist in ["normal", "heavy_tailed", "uniform"]:
-        sub = sqnr_df[(sqnr_df["dist_type"] == dist) & (sqnr_df["scheme"] == "sym") &
-                      (sqnr_df["group_size"] == 64)]
+        sub = sqnr_df[
+            (sqnr_df["dist_type"] == dist)
+            & (sqnr_df["scheme"] == "sym")
+            & (sqnr_df["group_size"] == 64)
+        ]
         grouped = sub.groupby("bits")["sqnr_db"].mean()
         ax.plot(grouped.index, grouped.values, marker="o", label=dist)
     # Theoretical line
@@ -243,8 +265,14 @@ def generate_figure(sqnr_csv: Path, ablation_csv: Path) -> Path:
     ax.set_ylabel("MSE (log scale)")
     ax.set_yscale("log")
     for bar, val in zip(bars, values):
-        ax.text(bar.get_x() + bar.get_width() / 2, val,
-                f"{val:.4f}", ha="center", va="bottom", fontsize=8)
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            val,
+            f"{val:.4f}",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+        )
     ax.grid(True, alpha=0.3, axis="y")
 
     plt.tight_layout()
@@ -254,6 +282,7 @@ def generate_figure(sqnr_csv: Path, ablation_csv: Path) -> Path:
 
     # Compute actual dimensions
     from PIL import Image
+
     with Image.open(fig_path) as img:
         width, height = img.size
 

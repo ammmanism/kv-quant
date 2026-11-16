@@ -12,6 +12,7 @@ from kv_quant.quantizer import QuantParams
 @dataclass(frozen=True)
 class PageRef:
     """Reference to a quantized page (copy-on-write)."""
+
     page_id: int
     prefix_hash: int  # Hash of prefix for CoW deduplication
     ref_count: int = 1

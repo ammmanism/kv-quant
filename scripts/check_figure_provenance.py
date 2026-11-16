@@ -123,7 +123,7 @@ def main() -> int:
                 print(f"   - {err}")
             all_ok = False
 
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     if all_ok:
         print("[OK] All figures have valid provenance metadata")
         return 0

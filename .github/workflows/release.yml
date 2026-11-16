@@ -1,0 +1,33 @@
+name: release-artifacts
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  publish-release:
+    name: Publish Annotated Release & Attach CSV/PNG Artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Collect verified artifacts
+        run: |
+          mkdir -p dist_artifacts
+          cp bench/data/*.csv dist_artifacts/ 2>/dev/null || true
+          cp bench/data/*.json dist_artifacts/ 2>/dev/null || true
+          cp docs/figures/*.png dist_artifacts/ 2>/dev/null || true
+          cp docs/explorer.html dist_artifacts/ 2>/dev/null || true
+          ls -la dist_artifacts
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          gh release create "$TAG" dist_artifacts/* \
+            --title "kv-quant $TAG" \
+            --generate-notes

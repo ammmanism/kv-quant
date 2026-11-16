@@ -14,9 +14,9 @@ CLAIM_PATTERN = re.compile(r"\[#([^\]]+)\]")
 
 # Patterns to skip (template/examples, not real claims)
 SKIP_PATTERNS = [
-    r"\.\.\.",           # ellipsis placeholder
-    r"file\.csv:column", # example format
-    r"filename\.csv:",   # example format
+    r"\.\.\.",  # ellipsis placeholder
+    r"file\.csv:column",  # example format
+    r"filename\.csv:",  # example format
 ]
 CSV_DIR = Path("bench/data")
 
@@ -106,7 +106,7 @@ def main() -> int:
                 print(f"  [FAIL] Line {line_num}: [{ref}] -> {msg}")
                 all_ok = False
 
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"Total claims checked: {total_claims}")
     if all_ok:
         print("[OK] All claims verified against committed CSVs")

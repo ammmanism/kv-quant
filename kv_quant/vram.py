@@ -11,6 +11,7 @@ from kv_quant.layout import PageLayout, get_layout
 @dataclass(frozen=True)
 class VRAMBreakdown:
     """Detailed VRAM breakdown."""
+
     sink_fp16_bytes: int
     quant_pages_bytes: int
     ring_fp16_bytes: int

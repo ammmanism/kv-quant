@@ -1,0 +1,20 @@
+name: security-audit
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  sast-and-lockfile:
+    name: Bandit SAST & Lockfile Integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - name: Verify uv.lock matches pyproject.toml
+        run: uv lock --check
+      - name: Run Bandit Static Security Analysis
+        run: uvx bandit -r kv_quant scripts -ll -ii
