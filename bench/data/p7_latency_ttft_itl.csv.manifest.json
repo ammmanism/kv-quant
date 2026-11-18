@@ -1,0 +1,30 @@
+{
+  "file": "p7_latency_ttft_itl.csv",
+  "sha256": "9c6ef7d9613e7c1f19c35e50c76c568528137ee5f60a89c62609dc57c3ae27a2",
+  "description": "Prefill TTFT (FP16 append vs quantized append) and decode ITL P50/P90/P99 (naive materialization vs fused split-K) crossover",
+  "generated_by": "bench/latency.py",
+  "mode": "modeled (analytical byte equations + seeded lognormal jitter)",
+  "model_id": "meta-llama/Llama-2-7b-hf",
+  "gpu_name": "cpu-only-host (no CUDA available)",
+  "columns": [
+    "context_len",
+    "config",
+    "k_bits",
+    "v_bits",
+    "ttft_fp16_ms",
+    "ttft_quant_ms",
+    "ttft_overhead_ms",
+    "itl_naive_p50_ms",
+    "itl_naive_p90_ms",
+    "itl_naive_p99_ms",
+    "itl_fused_p50_ms",
+    "itl_fused_p90_ms",
+    "itl_fused_p99_ms",
+    "itl_speedup_p50",
+    "amortize_decode_steps",
+    "mode",
+    "model_id",
+    "gpu_name"
+  ],
+  "num_rows": 20
+}
