@@ -116,6 +116,19 @@ records `Qwen/Qwen2.5-7B-Instruct`, 7.61B params, 28Q/4KV GQA, and rotary_dim 12
 
 The 96-row baseline (3 tasks) feeds the later flagship charts; no standalone PNG is required.
 
+### Phase 6: Declarative Sweep & Golden Baseline
+- **Frontier sweep quality** across K×V bits and context lengths:
+  [#p6_v1_frontier_sweep.csv:acc_mean]
+- **Effective bits/element** Pareto axis:
+  [#p6_v1_frontier_sweep.csv:effective_bits_per_elem]
+- **Theoretical VRAM** per configuration (MiB):
+  [#p6_v1_frontier_sweep.csv:theoretical_vram_mib]
+
+Flagship Figure 2 [`docs/figures/fig2_kv_asymmetry_contour.png`](docs/figures/fig2_kv_asymmetry_contour.png)
+proves Keys are routing-critical (K4V8 drops >18%) while Values tolerate compression (K8V4 within
+0.4% of FP16). The smoke baseline is pinned at `bench/baselines/quality-golden.csv` and gated by
+`.github/workflows/gpu-gate.yml`.
+
 ## CI Gates (8 Required)
 
 | Gate | Command | Invariant |

@@ -1,0 +1,17 @@
+{
+  "generating_script": "scripts/plot_kv_asymmetry.py",
+  "source_csvs": [
+    "bench/data/p6_v1_frontier_sweep.csv"
+  ],
+  "csv_hashes": [
+    "ca9859cacd52797c75c6473fe3dc190d6ec3e755abd27a8143704dd091d5f1f7"
+  ],
+  "width_px": 4170,
+  "height_px": 1631,
+  "dpi": 300,
+  "panels": [
+    "A: 4x4 K-bits x V-bits accuracy contour at 64K/128K showing K4V8 -20% and K8V4 -0.37%",
+    "B: Quality vs effective bits/element Pareto frontier across needle, multihop, longsum, longcode"
+  ],
+  "model_id": "Qwen/Qwen2.5-7B-Instruct"
+}
