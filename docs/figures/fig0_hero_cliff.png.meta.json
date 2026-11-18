@@ -1,0 +1,18 @@
+{
+  "generating_script": "scripts/plot_hero_cliff.py",
+  "source_csvs": [
+    "bench/data/p6_v1_frontier_sweep.csv"
+  ],
+  "csv_hashes": [
+    "ca9859cacd52797c75c6473fe3dc190d6ec3e755abd27a8143704dd091d5f1f7"
+  ],
+  "width_px": 4469,
+  "height_px": 1796,
+  "dpi": 300,
+  "panels": [
+    "A: accuracy vs context (4K-128K) for 7 K/V configs with Wilson 95% CI bands (Bernoulli-discretized cell means, 20 trials/cell x 2 fast tasks = n=40); INT4-K cliff callout is config-level (-20.2% vs FP16, onset <=4K, flat through 128K)",
+    "B: quality retained (%) vs KV VRAM compression ratio Pareto frontier at 64K and 128K (compression from kv_cache_calculator_bytes, Qwen2.5-7B geometry)"
+  ],
+  "model_id": "Qwen/Qwen2.5-7B-Instruct",
+  "wilson_ci_derivation": "acc_mean per cell is the mean of 20 seeded trials (v1-frontier manifest); pooling 2 fast tasks gives n=40 with k=round(acc_mean*40); bands are conservative because scores are continuous"
+}

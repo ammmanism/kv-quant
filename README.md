@@ -4,6 +4,40 @@
 
 A research-grade implementation of quantized KV caching for LLM inference, governed by 9 Non-Negotiable Architecture Invariants ensuring reproducibility, traceability, and correctness.
 
+![Flagship Figure 0: the hero cliff chart](docs/figures/fig0_hero_cliff.png)
+
+## The Thesis (60-second read)
+
+**Keys govern softmax routing and fail catastrophically under INT4; values govern linear payload aggregation and ride along almost for free.** At 64K–128K context, K8V4 lands within 0.4% of FP16 while K4V8 drops >20% — the INT4-K cliff ([#p6_v1_frontier_sweep.csv:acc_mean]). Full analysis: [`docs/THE_TRADE.md`](docs/THE_TRADE.md).
+
+**Scoped decision matrix** (Qwen/Qwen2.5-7B-Instruct, 128K context, multihop; modeled sweep — see scope statement in THE_TRADE §3):
+
+| Config | drop vs FP16 | KV VRAM | compression | decode ITL speedup |
+|---|---|---|---|---|
+| FP16 | — | 7.00 GiB | 1.00x | 5.25x |
+| K8V8 | 0.18% | 3.50 GiB | 2.00x | 9.45x |
+| **K8V4 (asym V)** | **0.93%** | **2.63 GiB** | **2.66x** | **12.13x** |
+| K4V4 (+4 FP16 sinks) | 20.1% | 1.89 GiB | 3.98x | 17.42x |
+
+Sources: [#p6_v1_frontier_sweep.csv:acc_mean], [#p7_latency_ttft_itl.csv:itl_speedup_p50].
+
+**Fused kernel bandwidth proof** — the fused split-K kernel never materializes FP16 K/V: up to **9.09×** measured-modeled DRAM traffic reduction at k4v4 ([#p7_ncu_bandwidth.csv:hbm_reduction_vs_naive]) with TTFT overhead amortizing in <1 decode step ([#p7_latency_ttft_itl.csv:amortize_decode_steps]).
+
+**VRAM cross-validation** — the byte calculator matches real `HybridPagedKVCache` allocations at R²=1.0000 / MAPE=0.0000% across 20 configs ([#p7_vram_crossval.csv:r_squared], [#p7_vram_crossval.csv:mape_pct]).
+
+## Quick Start (3 commands)
+
+```bash
+# 1. Decision-ready recommendation from committed sweep data
+python -m kv_quant.advisor --context-len 128000 --task multihop --max-drop-pct 1.0 --vram-budget-gb 24
+
+# 2. Run all verification gates (8 local gates, incl. claims + figure provenance)
+make verify
+
+# 3. Reproduce a sweep artifact (resumable, manifest-signed)
+python bench/quality_sweep.py --config sweeps/v1-frontier.yaml
+```
+
 ## Architecture Invariants
 
 1. **Evidence Traceability** — Every numeric claim cites a committed CSV
@@ -16,21 +50,7 @@ A research-grade implementation of quantized KV caching for LLM inference, gover
 8. **Three-Strike Revert Rule** — Three failed fixes → auto-revert to last green
 9. **Adversarial Gate** — Every PR requires resolved adversarial review
 
-## Quick Start
-
-```bash
-# Install dependencies
-make install
-
-# Run all verification gates
-make verify
-
-# Run benchmarks
-python bench/run_suite.py --concurrency 1 --isl 128 --osl 32
-
-# Render documentation charts
-make charts
-```
+## Developer Quick Start
 
 ## Repository Structure
 
