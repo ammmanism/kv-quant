@@ -79,8 +79,11 @@ def verify_claim(csv_path: Path, spec: str) -> tuple[bool, str]:
 def main() -> int:
     """Check all markdown files for unverified claims."""
     md_files = list(Path().rglob("*.md"))
-    # Exclude rfc/reviews (adversary gate handles those)
-    md_files = [f for f in md_files if not str(f).startswith("rfc/reviews/")]
+    # Exclude rfc/reviews (adversary gate handles those). Compare path parts,
+    # not a slash-joined string: on Windows str(f) yields backslashes and the
+    # old forward-slash prefix never matched, so reviews were silently checked
+    # on dev hosts but skipped in Linux CI.
+    md_files = [f for f in md_files if f.parts[:2] != ("rfc", "reviews")]
 
     all_ok = True
     total_claims = 0

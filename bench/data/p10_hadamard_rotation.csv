@@ -1,0 +1,11 @@
+fixture,scope,kurtosis_window,rotary_dim,head_dim,pre_kurtosis,post_kurtosis,sqnr_before_db,sqnr_after_db,sqnr_delta_db,sample_rows
+micro_kv_2k (null control),block_diag,rotary_subspace,32,64,2.818,2.816,20.459,20.443,-0.015,512
+micro_kv_2k (null control),full,full_head,32,64,2.907,2.91,20.459,20.492,0.033,512
+micro_kv_2k_outliers (primary),block_diag,rotary_subspace,32,64,14.842,2.011,15.566,22.915,7.349,512
+micro_kv_2k_outliers (primary),full,full_head,32,64,33.391,1.921,15.566,22.505,6.939,512
+outliers_2ch_20_50 (sensitivity),block_diag,rotary_subspace,32,64,17.574,1.829,16.939,24.097,7.157,512
+outliers_2ch_20_50 (sensitivity),full,full_head,32,64,40.112,1.705,16.939,23.621,6.682,512
+outliers_3ch_20_60 (sensitivity),block_diag,rotary_subspace,32,64,16.896,1.876,19.214,23.704,4.49,512
+outliers_3ch_20_60 (sensitivity),full,full_head,32,64,36.099,1.835,19.214,23.315,4.101,512
+outliers_1ch_10_40 (sensitivity),block_diag,rotary_subspace,32,64,9.75,2.351,16.347,23.488,7.142,512
+outliers_1ch_10_40 (sensitivity),full,full_head,32,64,35.2,1.862,16.347,23.032,6.685,512

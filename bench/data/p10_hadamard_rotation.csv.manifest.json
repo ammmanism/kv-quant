@@ -1,0 +1,21 @@
+{
+  "git_sha": "e50b82e71390462ac39c3413d2762a9d3aba13e1",
+  "timestamp_utc": "2026-11-18T17:00:05.989835+00:00",
+  "model_id": "synthetic/micro_kv_2k (no model weights)",
+  "param_count_b": 0.0,
+  "num_q_heads": 8,
+  "num_kv_heads": 8,
+  "rotary_dim": 32,
+  "gpu_name": "cpu-only-ci",
+  "seed": 42,
+  "sha256_csv": "281b0c48cc74fac08bb128593d21f499aaa5202ed50a6d5c21068b0f14876944",
+  "extra": {
+    "description": "Measured Hadamard rotation effect on activation fixtures: kurtosis (Pearson) and INT4 SQNR",
+    "fixtures": [
+      "bench/activations/micro_kv_2k.pt",
+      "bench/activations/micro_kv_2k_outliers.pt"
+    ],
+    "fixture_regeneration": "outliers fixture is gitignored and rebuilt deterministically by bench/hadamard_rescue.py from micro_kv_2k.pt + the committed injection.json",
+    "measurement": "deterministic sample of 512 rows; INT4 sym group=32; kurtosis window is scope-dependent (see kurtosis_window column): rotary_subspace = first rotary_dim channels for block_diag, full_head = all head_dim channels for full; Pearson convention (3.0 = Gaussian); sensitivity rows are in-memory deterministic variants of the pristine fixture, primary injection is 2 channels U(8.0,32.0)"
+  }
+}

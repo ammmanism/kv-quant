@@ -48,3 +48,6 @@ Thumbs.db
 # Coverage
 .coverage
 htmlcov/
+# Phase-10 synthetic outlier fixture: 18 MB binary, rebuilt deterministically by
+# bench/hadamard_rescue.py from micro_kv_2k.pt + micro_kv_2k_outliers.injection.json
+bench/activations/*_outliers.pt
