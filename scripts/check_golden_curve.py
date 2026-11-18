@@ -5,6 +5,7 @@ Compares current benchmark results against bench/baselines/quality-golden.csv.
 Fails if drift >1.5% accuracy or >2.0% VRAM error.
 """
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -18,17 +19,26 @@ VRAM_THRESHOLD = 0.020  # 2.0%
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Golden curve drift check (Invariant 7)")
+    parser.add_argument(
+        "--current",
+        type=Path,
+        default=CURRENT_PATH,
+        help="metric,value CSV to compare against the golden baseline",
+    )
+    args = parser.parse_args()
+
     if not GOLDEN_PATH.exists():
         print(f"[FAIL] Golden baseline not found: {GOLDEN_PATH}")
         return 1
 
-    if not CURRENT_PATH.exists():
-        print(f"[FAIL] Current results not found: {CURRENT_PATH}")
+    if not args.current.exists():
+        print(f"[FAIL] Current results not found: {args.current}")
         print("   Run bench suite first: python bench/run_suite.py")
         return 1
 
     golden = pd.read_csv(GOLDEN_PATH)
-    current = pd.read_csv(CURRENT_PATH)
+    current = pd.read_csv(args.current)
 
     # Expected columns: metric, value
     # Metrics: accuracy, vram_mib, latency_ms, throughput_tps

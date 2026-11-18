@@ -51,3 +51,8 @@ htmlcov/
 # Phase-10 synthetic outlier fixture: 18 MB binary, rebuilt deterministically by
 # bench/hadamard_rescue.py from micro_kv_2k.pt + micro_kv_2k_outliers.injection.json
 bench/activations/*_outliers.pt
+
+# CI golden-regression artifacts: regenerated per run, never committed
+# (the tracked bench/data/quality-current.csv stub is deliberately NOT matched)
+bench/data/quality-current-*.csv
+bench/data/quality-current*.csv.manifest.json

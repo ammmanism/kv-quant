@@ -5,32 +5,43 @@ on:
     branches: [main]
   push:
     branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   golden-regression:
     name: Golden Baseline Regression (CPU proxy)
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    # Locally measured at ~4 min for the 96-cell smoke sweep; the original
+    # 6-minute budget was never validated because this workflow failed to
+    # parse (see rfc/reviews/ci-gate-repair-review.md).
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
       - name: Install frozen dependencies
         run: uv sync --frozen
       - name: Run smoke sweep
-        run: uv run python bench/quality_sweep.py --config sweeps/smoke-ci.yaml --output bench/data/quality-current-proxy.csv
-      - name: Golden baseline drift check
-        run: uv run python -c "
-          import pandas as pd
-          g = pd.read_csv('bench/baselines/quality-golden.csv').set_index('metric')['value']
-          print('golden accuracy baseline:', round(float(g['accuracy']), 4))
-          print('golden vram baseline:', round(float(g['vram_mib']), 2))
-        "
+        run: >
+          uv run python bench/quality_sweep.py --config sweeps/smoke-ci.yaml
+          --output bench/data/quality-current-sweep.csv
+      - name: Summarize sweep to golden metrics
+        run: uv run python scripts/summarize_quality.py
       - name: Golden curve compare
-        run: uv run python scripts/check_golden_curve.py
+        run: >
+          uv run python scripts/check_golden_curve.py
+          --current bench/data/quality-current-summary.csv
 
   gpu-kernel-parity:
+    # Manual dispatch only: no self-hosted GPU runner is registered yet, so a
+    # push-triggered job would queue for its full timeout and fail on every
+    # merge (ADR-006 two-tier CI economics: GPU parity is scheduled, not
+    # per-push). Dispatch this workflow from a GPU host to run the gate.
     name: GPU Kernel Parity (self-hosted GPU runner)
-    if: github.event_name == 'push'
+    if: github.event_name == 'workflow_dispatch'
     runs-on: [self-hosted, gpu]
     timeout-minutes: 10
     steps:
