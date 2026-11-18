@@ -1,0 +1,19 @@
+{
+  "generating_script": "scripts/plot_needle_heatmap.py",
+  "source_csvs": [
+    "bench/data/p4_needle_depth_matrix.csv"
+  ],
+  "csv_hashes": [
+    "a097db2aba5bbde6613d6957393e8bc421a458de39a099061e039310465d14a7"
+  ],
+  "width_px": 5670,
+  "height_px": 1631,
+  "dpi": 300,
+  "panels": [
+    "A: K4V4 post-RoPE context x depth accuracy heatmap exposing late-context cliff",
+    "B: K8V4 context x depth accuracy heatmap showing flat retention",
+    "C: Delta-logP drift vs insertion depth decile at 64K and 128K with model subtitle"
+  ],
+  "model_id": "Qwen/Qwen2.5-7B-Instruct",
+  "param_count_b": 7.61
+}

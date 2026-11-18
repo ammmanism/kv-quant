@@ -92,6 +92,19 @@ A deterministic micro-activation fixture is committed at `bench/activations/micr
 Design notes, the 8.11× derivation, and the architecture matrix are in
 [`docs/KERNEL_NOTES.md`](docs/KERNEL_NOTES.md).
 
+### Phase 4: Position-Resolved Needle Probe
+- **Retrieval accuracy** across context × depth for `k4v4_postrope_sink4`:
+  [#p4_needle_depth_matrix.csv:acc_mean]
+- **Continuous Delta-logP RoPE phase decay sensor** (nats):
+  [#p4_needle_depth_matrix.csv:delta_logp]
+- **Wilson 95% CI bounds**: [#p4_needle_depth_matrix.csv:ci95_low],
+  [#p4_needle_depth_matrix.csv:ci95_high]
+
+Flagship Figure 1 [`docs/figures/fig1_needle_depth_heatmap.png`](docs/figures/fig1_needle_depth_heatmap.png)
+exposes the late-context depth cliff (Panel A), flat K8V4 retention (Panel B), and continuous
+Delta-logP drift with the model identity printed in the subtitle (Panel C). The manifest
+records `Qwen/Qwen2.5-7B-Instruct`, 7.61B params, 28Q/4KV GQA, and rotary_dim 128.
+
 ## CI Gates (8 Required)
 
 | Gate | Command | Invariant |

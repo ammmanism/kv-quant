@@ -1,0 +1,13 @@
+{
+  "git_sha": "395c7d5ff30790b10c86fc15210a01a9a8489b77",
+  "timestamp_utc": "2026-11-16T13:18:59.893822+00:00",
+  "model_id": "Qwen/Qwen2.5-7B-Instruct",
+  "param_count_b": 7.61,
+  "num_q_heads": 28,
+  "num_kv_heads": 4,
+  "rotary_dim": 128,
+  "gpu_name": "cpu-only-ci",
+  "seed": 42,
+  "sha256_csv": "a097db2aba5bbde6613d6957393e8bc421a458de39a099061e039310465d14a7",
+  "extra": {}
+}
