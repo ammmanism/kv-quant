@@ -105,6 +105,17 @@ exposes the late-context depth cliff (Panel A), flat K8V4 retention (Panel B), a
 Delta-logP drift with the model identity printed in the subtitle (Panel C). The manifest
 records `Qwen/Qwen2.5-7B-Instruct`, 7.61B params, 28Q/4KV GQA, and rotary_dim 128.
 
+### Phase 5: Ecological Task Suite
+- **Multi-hop bridge QA** exact-match / F1 and per-hop recall:
+  [#p5_ecological_baseline.csv:em], [#p5_ecological_baseline.csv:f1],
+  [#p5_ecological_baseline.csv:hop1_recall], [#p5_ecological_baseline.csv:hop2_recall]
+- **Longsum** exact planted-fact retention and ROUGE-L:
+  [#p5_ecological_baseline.csv:fact_retention_pct], [#p5_ecological_baseline.csv:rouge_l]
+- **Longcode** AST exact-match and pass@1:
+  [#p5_ecological_baseline.csv:ast_exact_match], [#p5_ecological_baseline.csv:pass_at_1]
+
+The 96-row baseline (3 tasks) feeds the later flagship charts; no standalone PNG is required.
+
 ## CI Gates (8 Required)
 
 | Gate | Command | Invariant |

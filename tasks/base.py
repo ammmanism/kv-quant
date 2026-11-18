@@ -26,6 +26,9 @@ class TrialRecord:
     trial_idx: int
     correct: bool
     delta_logp: float  # log P_FP16 - log P_quant, in nats
+    # Task-specific continuous metrics (em, f1, rouge_l, fact_retention_pct, etc.)
+    # Kept as a mapping so the spine stays task-agnostic.
+    metrics: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -137,20 +140,26 @@ class EvalTask(ABC):
             n = len(trials)
             correct = sum(1 for t in trials if t.correct)
             lo, hi = wilson_ci(correct, n)
-            rows.append(
-                {
-                    "config_id": cfg,
-                    "context_len": ctx,
-                    "depth_pct": depth,
-                    "needle_format": fmt,
-                    "trials": n,
-                    "correct": correct,
-                    "acc_mean": correct / n if n else 0.0,
-                    "ci95_low": lo,
-                    "ci95_high": hi,
-                    "delta_logp": sum(t.delta_logp for t in trials) / n if n else 0.0,
-                }
-            )
+            row: dict[str, float | int | str] = {
+                "config_id": cfg,
+                "context_len": ctx,
+                "depth_pct": depth,
+                "needle_format": fmt,
+                "trials": n,
+                "correct": correct,
+                "acc_mean": correct / n if n else 0.0,
+                "ci95_low": lo,
+                "ci95_high": hi,
+                "delta_logp": sum(t.delta_logp for t in trials) / n if n else 0.0,
+            }
+            # Merge task-specific continuous metrics (mean across trials)
+            metric_keys: set[str] = set()
+            for t in trials:
+                metric_keys.update(t.metrics.keys())
+            for metric_name in sorted(metric_keys):
+                vals = [t.metrics.get(metric_name, 0.0) for t in trials]
+                row[metric_name] = sum(vals) / n if n else 0.0
+            rows.append(row)
         return pd.DataFrame(rows)
 
     def sweep(self, manifest: SweepManifest, csv_path: Path | None = None) -> pd.DataFrame:
