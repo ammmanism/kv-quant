@@ -1,0 +1,29 @@
+{
+  "file": "p7_ncu_bandwidth.csv",
+  "sha256": "840c5c75e32fbe6cd1fffca054a99947a06280ce2ac9097ed4250e09382480fe",
+  "description": "ncu DRAM traffic counters: dequant_naive vs dequant_fused across seq lens and K/V configs (modeled counters + L2 residency model; see docs/KERNEL_NOTES.md)",
+  "generated_by": "bench/bandwidth.py --sweep",
+  "mode": "ncu-modeled",
+  "model_id": "meta-llama/Llama-2-7b-hf",
+  "gpu_name": "cpu-only-host (no CUDA/ncu available)",
+  "columns": [
+    "seq_len",
+    "config",
+    "k_bits",
+    "v_bits",
+    "kernel",
+    "mode",
+    "dram_read_bytes",
+    "dram_write_bytes",
+    "dram_total_bytes",
+    "duration_us",
+    "l2_hit_rate_pct",
+    "theoretical_total_bytes",
+    "measured_vs_theory_ratio",
+    "model_id",
+    "gpu_name",
+    "hbm_reduction_vs_naive",
+    "itl_speedup_x"
+  ],
+  "num_rows": 40
+}

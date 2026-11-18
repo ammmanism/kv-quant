@@ -271,8 +271,10 @@ def quantize_group(
     original_size = x.shape[0]
 
     if bits == 16:
-        # No quantization - return FP16 as-is (packed as raw bytes)
-        packed = x.view(torch.uint8)
+        # No quantization - return FP16 as-is (packed as raw bytes).
+        # .contiguous() first: callers may pass strided channel views, and
+        # `view` requires the last-dim stride to be 1.
+        packed = x.contiguous().view(torch.uint8)
         return packed, QuantParams(
             scale=torch.tensor(1.0, dtype=torch.float16, device=x.device),
             zero_point=torch.tensor(0, dtype=torch.uint8, device=x.device),

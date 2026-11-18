@@ -1,0 +1,21 @@
+{
+  "generating_script": "scripts/plot_roofline_and_vram.py",
+  "source_csvs": [
+    "bench/data/p7_ncu_bandwidth.csv",
+    "bench/data/p7_latency_ttft_itl.csv",
+    "bench/data/p7_vram_crossval.csv"
+  ],
+  "csv_hashes": [
+    "840c5c75e32fbe6cd1fffca054a99947a06280ce2ac9097ed4250e09382480fe",
+    "9c6ef7d9613e7c1f19c35e50c76c568528137ee5f60a89c62609dc57c3ae27a2",
+    "f0c88381ea7b83fefbb89f93ad6759c66227ca21ea0d40aea2b63fca298d4953"
+  ],
+  "width_px": 4168,
+  "height_px": 1631,
+  "dpi": 300,
+  "panels": [
+    "A: theoretical vs ncu-modeled DRAM traffic (naive vs fused, k4v4, log scale) with decode ITL speedup overlay across 4K-128K contexts",
+    "B: kv-cache-calculator predicted vs measured peak VRAM scatter with OLS fit (R^2 and MAPE annotated) across 20 K/V configs"
+  ],
+  "model_id": "meta-llama/Llama-2-7b-hf (A), Qwen/Qwen2.5-7B-Instruct (B)"
+}

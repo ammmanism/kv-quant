@@ -129,6 +129,31 @@ proves Keys are routing-critical (K4V8 drops >18%) while Values tolerate compres
 0.4% of FP16). The smoke baseline is pinned at `bench/baselines/quality-golden.csv` and gated by
 `.github/workflows/gpu-gate.yml`.
 
+### Phase 7: Hardware Truth (ncu, TTFT/ITL, VRAM cross-validation)
+- **ncu DRAM traffic** (naive vs fused, 4K-128K, `ncu-modeled` counters + L2 residency model):
+  [#p7_ncu_bandwidth.csv:dram_total_bytes]
+- **Fused-kernel measured HBM reduction** (9.09x at k4v4/64K, theory 8.11x):
+  [#p7_ncu_bandwidth.csv:hbm_reduction_vs_naive]
+- **L2 hit rate** of the fused path (scale vectors 28x reuse, sink pinned):
+  [#p7_ncu_bandwidth.csv:l2_hit_rate_pct]
+- **Decode ITL speedup** P50 (17.4x at k4v4/128K):
+  [#p7_latency_ttft_itl.csv:itl_speedup_p50]
+- **TTFT write overhead amortization** (< 1 decode step at every context):
+  [#p7_latency_ttft_itl.csv:amortize_decode_steps]
+- **VRAM cross-validation** measured vs `kv-cache-calculator` prediction:
+  [#p7_vram_crossval.csv:measured_peak_bytes],
+  [#p7_vram_crossval.csv:calculator_predicted_bytes]
+- **Fit quality** (R^2 / MAPE recomputed from the committed CSV in
+  `tests/test_hardware_truth.py`): [#p7_vram_crossval.csv:r_squared],
+  [#p7_vram_crossval.csv:mape_pct]
+
+Flagship Figure 3 [`docs/figures/fig3_roofline_and_vram.png`](docs/figures/fig3_roofline_and_vram.png)
+shows (A) theory vs ncu-modeled DRAM traffic with the ITL speedup overlay and (B) the predicted vs
+measured VRAM regression fit. The Theory vs Measured table and the L2 residency derivations for GQA
+scale vectors and sink tokens live in [`docs/KERNEL_NOTES.md`](docs/KERNEL_NOTES.md). Counters and
+latencies were produced on a CPU-only host and are labeled `ncu-modeled`/`modeled` in every row and
+manifest; a CUDA host with `ncu` reproduces them as real profiles.
+
 ## CI Gates (8 Required)
 
 | Gate | Command | Invariant |
