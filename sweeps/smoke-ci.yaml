@@ -34,4 +34,8 @@ heavy_tasks:
 
 # Budget: smoke run caps cells for CI speed while keeping representative coverage.
 max_cells: 96
-output: bench/data/quality-current.csv
+# Raw per-cell sweep output. Deliberately NOT bench/data/quality-current.csv:
+# that path is the tracked run_suite.py stub (see REPRODUCE.md); writing the
+# sweep there would clobber a committed artifact. The golden-compare gate
+# consumes the summarized form at bench/data/quality-current-summary.csv.
+output: bench/data/quality-current-sweep.csv
