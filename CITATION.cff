@@ -1,0 +1,31 @@
+cff-version: 1.2.0
+title: kv-quant — KV-cache quantization quality cliffs, quantified
+message: >-
+  If you use this software, research artifacts, or the quantified quality-cliff
+  findings, please cite it as below.
+type: software
+authors:
+  - name: Amman
+    email: amman@users.noreply.github.com
+version: 1.0.0
+date-released: "2026-11-18"
+license: Apache-2.0
+repository-code: "https://github.com/ammmanism/kv-quant"
+url: "https://github.com/ammmanism/kv-quant/releases/tag/v1.0.0"
+abstract: >-
+  kv-quant is a research-grade implementation of quantized KV caching for LLM
+  inference under provable correctness gates. Its v1.0.0 release quantifies
+  the K/V asymmetry law: key-channel INT4 quantization collapses retrieval
+  accuracy by ~20% regardless of context length (the INT4-K cliff), while
+  value-channel INT4 stays within 1% of FP16 — a scoped decision matrix
+  (K8V4 as the recommended operating point) backed entirely by committed,
+  checksum-pinned CSV artifacts, Wilson-95%-CI uncertainty quantification,
+  and a claims gate that rejects any uncited numeric statement in the docs.
+keywords:
+  - kv-cache
+  - quantization
+  - llm-inference
+  - attention-sinks
+  - gqa
+  - triton
+  - reproducibility
