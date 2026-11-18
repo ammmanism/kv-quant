@@ -108,6 +108,10 @@ module = "tests.*"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
+module = "kv_quant.kernels.triton_hadamard"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
 module = "scripts.*"
 ignore_errors = true
 

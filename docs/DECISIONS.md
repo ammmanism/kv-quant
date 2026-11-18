@@ -234,6 +234,123 @@ rotation landing, to keep the drift audit trail meaningful.
 
 ---
 
+## ADR-008: Block-Diagonal vs. Full Walsh-Hadamard for Partial-RoPE Models
+
+**Status**: Accepted — **Implements**: ADR-007 item 1 (v1.1.0-hadamard).
+
+**Context.** v1.0 established that the INT4-K cliff is a post-RoPE channel
+outlier problem ([#p6_v1_frontier_sweep.csv:acc_mean]) and that pre-RoPE
+per-channel quantization is not viable inside a paged cache (ADR-003). The
+remaining remedy is a *fixed orthogonal rotation*: apply the same map `R` to Q
+and K so channel mass spreads and the INT4 grid sees a near-Gaussian shape,
+without changing any attention logit.
+
+Two architectures must be served. Llama-style models rotate the whole head
+(full RoPE), so `R` may act on all `head_dim` channels. Qwen/Mistral-style
+models rotate only the first `rotary_dim < head_dim` channels, leaving a
+pass-through subspace whose content is *phase-free but position-mixed*; mixing
+it into the rotary block would corrupt the positional subspace that RoPE just
+encoded. Hence two scopes:
+
+- `full`: `x' = H_D (D_seed x) / sqrt(D)`.
+- `block_diag`:
+  `x' = blkdiag(D1 H_r / sqrt(r), D2 H_p / sqrt(p)) x`, with `r = rotary_dim`,
+  `p = D - r`, and independent seeded sign vectors (`seed`, `seed + 1`).
+  When `p` is not a power of two the pass block is `I_p` (documented contract),
+  which preserves orthogonality.
+
+**Decision.** Implement both scopes in `kv_quant/hadamard.py`
+(`fast_walsh_hadamard`, `hadamard_matrix`, `inverse_fast_walsh_hadamard`) with
+`QuantConfig.resolve_hadamard_scope(head_dim, rotary_dim)` defaulting partial
+RoPE to `block_diag` and full RoPE to `full`. Both Q and K are rotated *before*
+`HybridPagedKVCache.append()`, so the memory-bound KV read loop in
+`dequant_fused` gains **zero extra ops**: it computes `<Q', K'>` directly in
+the Hadamard basis. `kv_quant/kernels/triton_hadamard.py` provides the fused
+butterfly (`_triton_fwht_rotate_kernel`) with a PyTorch dispatch fallback.
+
+**Evidence (measured, CPU).** Kurtosis is Pearson (3.0 = Gaussian) and is
+measured on a scope-appropriate window, committed as the
+`kurtosis_window` column: the rotary subspace for `block_diag` (the only part
+that map touches) and the full head for `full`. Mixing those windows without
+saying so is exactly the kind of comparison error that inflates a rescue.
+
+On the synthetic Gaussian fixture `micro_kv_2k.pt` — the fixture the milestone
+named — the rotation is a **null control**: per-channel kurtosis is already
+≈ Gaussian, so `block_diag` moves 2.818 → 2.816 and changes INT4 SQNR by
+−0.015 dB ([#p10_hadamard_rotation.csv:sqnr_delta_db], row 0), while `full`
+moves 2.907 → 2.910 for +0.033 dB. The fixture contains no outlier structure to
+rescue, and we report that rather than tune around it.
+
+Rescue is therefore measured on `micro_kv_2k_outliers.pt`, an explicitly
+synthetic derivative of that fixture (deterministic injection of 2 channels per
+layer/head scaled `U(8, 32)`, seed 2026; injection parameters are committed in
+`bench/activations/micro_kv_2k_outliers.injection.json`). There, `block_diag`
+collapses rotary-subspace kurtosis from 14.842 to 2.011 with **+7.349 dB** INT4
+SQNR ([#p10_hadamard_rotation.csv:sqnr_delta_db], row 2). `full` collapses
+full-head kurtosis from 33.391 to 1.921 with +6.939 dB (row 3). The two
+windows agree on the mechanism and disagree on the headline κ only because
+`block_diag` deliberately leaves the pass-through channels alone — which is the
+property that protects the positional subspace.
+
+The projected needle sweep built on the `block_diag` gain keeps
+`k4v4_hadamard_projected` within 0.01–0.03 absolute accuracy of FP16 across
+4K–128K contexts, versus 0.845–0.950 for `k4v4_postrope`
+([#p10_hadamard_rescue.csv:acc_mean]). That row's `config_id` carries the
+`_projected` suffix because it is a modeled shift, not a measured forward pass;
+the manifest states this and warns that the `ci95_*` columns are baseline
+sampling intervals, not projection error bars.
+
+**Honest deviation from the milestone target.** The milestone asked for
+kurtosis `> 25 → ~3.0` on `micro_kv_2k.pt` and a `> 7.5 dB` SQNR gain. Two of
+those three clauses are met only on the outlier derivative, and one is not met.
+Kurtosis does exceed 25 (33.391) and does collapse to near-Gaussian (1.921),
+but on `micro_kv_2k_outliers.pt`, not on the pristine fixture. The measured
+gain is **+7.349 dB**, i.e. 0.151 dB short of the target
+([#p10_hadamard_rotation.csv:sqnr_after_db]). This is a saturation effect, not
+a tuning failure: post-rotation SQNR sits at ~23–24 dB, the INT4/group-32
+Gaussian ceiling, so no rotation can gain much more. The **pre-declared**
+sensitivity ladder (rows 4–9) confirms it: 2ch `U(20,50)` gives
+17.574 → 1.829 / +7.157 dB; 3ch `U(20,60)` gives 16.896 → 1.876 / +4.490 dB;
+1ch `U(10,40)` gives 9.750 → 2.351 / +7.142 dB. The ladder was fixed before
+the numbers were seen and is committed so a reader can audit that no row was
+selected to clear 7.5 dB. The residual gap is reported as unmet.
+
+**Kernel status (ADR-006).** `_triton_fwht_rotate_kernel` is GPU-only code.
+Triton ships no win32 wheel and this host has no CUDA device, so the butterfly
+has not been compiled or executed here. The parity gate
+(`tests/test_hadamard.py::TestRotateQkKernelDispatch::test_gpu_triton_rotation_matches_reference`)
+is marked `gpu` and skips on CPU; the CPU dispatch path is asserted equal to
+`fast_walsh_hadamard` on every scope. Until that gate runs on a GPU host, treat
+the device path as unverified.
+
+**Consequences.**
+- The outlier fixture is **not committed** (18 MB binary). It is rebuilt
+  deterministically from `micro_kv_2k.pt` plus the committed
+  `micro_kv_2k_outliers.injection.json`, so `bench/data/p10_*` remains
+  reproducible from a clean checkout by running `bench/hadamard_rescue.py`.
+- **Open defect, not fixed here (pre-existing).** The legacy `use_hadamard=True`
+  path does not use this API: `KVQuantWrapper.hadamard_hook` rotates Q with the
+  sign-free `hadamard_transform`, while `quantizer.quantize_keys` rotates K with
+  `hadamard_rademacher_transform` (seeded signs). Those are different maps, so
+  `<Q', K'> != <Q, K>` on that path, and `KVQuantProfiler`'s `K4V4_Hadamard`
+  schedule selects it. Fixing it is a protocol change spanning `wrapper.py`
+  and `quantizer.py` (Q must receive the same signs K does), which the
+  one-core-file-per-pass rule forbids in this milestone. `rotate_qk()` is the
+  sanctioned entry point and is verified equal to the reference on every
+  scope; do not enable `use_hadamard` until the integration slice lands.
+- No bit-layout change: the golden layout hash is unchanged at
+  `913cd248…`, so ADR-007's "re-pin at Hadamard landing" resolves to *no
+  drift*, which the drift gate now confirms on every PR.
+- Rotation is not self-inverse: `R = H D` and `D H` do not commute, so the
+  inverse is `D H` (`inverse_fast_walsh_hadamard`). A property test caught the
+  original docstring error; the forward/inverse pair round-trips to ≤1e-4.
+- `full` scope requires `head_dim` to be a power of two and `block_diag`
+  requires `rotary_dim` to be one; anything else raises rather than silently
+  degrading, and the kernel wrapper falls back to the PyTorch path when a
+  pass block is not a power of two.
+
+---
+
 ## Provenance note
 
 Every numeric claim above resolves against a committed CSV under `bench/data/`

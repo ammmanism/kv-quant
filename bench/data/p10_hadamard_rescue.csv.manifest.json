@@ -1,0 +1,20 @@
+{
+  "git_sha": "e50b82e71390462ac39c3413d2762a9d3aba13e1",
+  "timestamp_utc": "2026-11-18T17:00:06.695881+00:00",
+  "model_id": "synthetic/micro_kv_2k (no model weights)",
+  "param_count_b": 0.0,
+  "num_q_heads": 8,
+  "num_kv_heads": 8,
+  "rotary_dim": 32,
+  "gpu_name": "cpu-only-ci",
+  "seed": 42,
+  "sha256_csv": "3a026d63cfe2e3cae3d9dff691ca5bfbdaed9cf8773cc524663e8a05523a5fcf",
+  "extra": {
+    "description": "Modeled projection of needle accuracy under block-diagonal Hadamard rotation",
+    "delta_sqnr_db": 7.349,
+    "projection": "acc = acc_fp16 - (acc_fp16 - acc_k4v4) * 10**(-delta_db/10); delta_logp scaled identically; derived from a replay-adapter baseline, not from real-model forward passes",
+    "config_id_note": "'k4v4_hadamard_projected' is a modeled projection, not a measured run",
+    "ci_semantics": "ci95_low/ci95_high are Wilson intervals over the baseline trial counts; they quantify sampling noise of the replay baseline and do NOT cover projection-model error, which is unbounded by this CSV",
+    "source_rotation_csv": "bench/data/p10_hadamard_rotation.csv"
+  }
+}
