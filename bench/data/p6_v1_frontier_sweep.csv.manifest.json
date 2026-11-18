@@ -1,0 +1,26 @@
+{
+  "file": "p6_v1_frontier_sweep.csv",
+  "sha256": "ca9859cacd52797c75c6473fe3dc190d6ec3e755abd27a8143704dd091d5f1f7",
+  "model_id": "Qwen/Qwen2.5-7B-Instruct",
+  "seed": 42,
+  "num_rows": 2596,
+  "columns": [
+    "task",
+    "config_id",
+    "k_bits",
+    "v_bits",
+    "context_len",
+    "k_per_channel",
+    "k_quant_stage",
+    "sink_tokens",
+    "k_encoding",
+    "status",
+    "acc_mean",
+    "delta_logp",
+    "effective_bits_per_elem",
+    "theoretical_vram_mib",
+    "model_id"
+  ],
+  "sweep_config": "v1-frontier.yaml",
+  "generated_by": "kv_quant.sweep.SweepOrchestrator"
+}

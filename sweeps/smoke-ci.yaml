@@ -1,0 +1,37 @@
+# Smoke CI sweep - small budget, runs on every PR.
+# Full Cartesian grid on fast tasks, scoped grid on heavy tasks.
+name: smoke-ci
+model:
+  model_id: "Qwen/Qwen2.5-7B-Instruct"
+  param_count_b: 7.61
+  num_q_heads: 28
+  num_kv_heads: 4
+  rotary_dim: 128
+seed: 42
+trials_per_cell: 2
+
+fast_tasks:
+  tasks: [needle, multihop]
+  grid:
+    k_bits: [16, 8, 6, 4]
+    v_bits: [16, 8, 6, 4]
+    contexts: [4096, 16384, 32768, 65536, 131072]
+    k_per_channel: [false, true]
+    k_quant_stage: [post_rope, pre_rope]
+    sink_tokens: [0, 4]
+    k_encoding: [int, fp8_e4m3]
+
+heavy_tasks:
+  tasks: [longsum, longcode]
+  contexts: [8192, 32768, 65536]
+  configs:
+    - fp16
+    - k8v8
+    - k8v4
+    - k4v8
+    - k4v4_postrope
+    - k4v4_prerope_ch
+
+# Budget: smoke run caps cells for CI speed while keeping representative coverage.
+max_cells: 96
+output: bench/data/quality-current.csv

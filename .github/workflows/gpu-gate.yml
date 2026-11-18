@@ -1,0 +1,42 @@
+name: gpu-gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  golden-regression:
+    name: Golden Baseline Regression (CPU proxy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - name: Install frozen dependencies
+        run: uv sync --frozen
+      - name: Run smoke sweep
+        run: uv run python bench/quality_sweep.py --config sweeps/smoke-ci.yaml --output bench/data/quality-current-proxy.csv
+      - name: Golden baseline drift check
+        run: uv run python -c "
+          import pandas as pd
+          g = pd.read_csv('bench/baselines/quality-golden.csv').set_index('metric')['value']
+          print('golden accuracy baseline:', round(float(g['accuracy']), 4))
+          print('golden vram baseline:', round(float(g['vram_mib']), 2))
+        "
+      - name: Golden curve compare
+        run: uv run python scripts/check_golden_curve.py
+
+  gpu-kernel-parity:
+    name: GPU Kernel Parity (self-hosted GPU runner)
+    if: github.event_name == 'push'
+    runs-on: [self-hosted, gpu]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - name: Install frozen dependencies
+        run: uv sync --frozen
+      - name: Run GPU parity tests
+        run: uv run pytest tests/test_parity.py tests/test_fused_kernel.py -m gpu -q
