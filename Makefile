@@ -1,7 +1,7 @@
 # kv-quant Makefile
 # Targets for CI gates and development workflow
 
-.PHONY: verify test lint typecheck drift-check figure-check kernel-parity golden-compare no-claims-without-artifact charts clean help
+.PHONY: verify verify-gpu test lint typecheck drift-check figure-check kernel-parity golden-compare no-claims-without-artifact charts clean help
 
 # Default target
 help:
@@ -21,6 +21,12 @@ help:
 # Run all CI verification gates
 verify: test lint typecheck drift-check figure-check kernel-parity golden-compare no-claims-without-artifact
 	@echo "✅ All verification gates passed"
+
+# GPU host: parity vs fused Triton kernel + GPU-marked tests (skipped on CPU CI)
+verify-gpu: test lint typecheck
+	uv run pytest tests/test_parity.py tests/test_fused_kernel.py -m gpu -q
+	uv run python scripts/check_layout_drift.py
+	@echo "✅ GPU verification passed"
 
 # Unit tests
 test:
