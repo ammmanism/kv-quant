@@ -329,6 +329,72 @@ schedule budgets), `tests/test_cache.py` (per-head precision, fork/CoW),
 
 ---
 
+## ADR-010: Gaussian 1-Bit QJL Residual Sketch as a Reference Prototype
+
+**Status:** Accepted (reference prototype; not the production decode path).
+**Date/Tag:** `v1.3.0-qjl-prototype`.
+
+**Context.** ADR-009 holds the production frontier at `4.5` effective bits.
+Below 4 bits the symmetric INT2 grid `{−s, 0, +s}` collapses most channels to
+zero, which both destroys accuracy and *biases* logits: quantized keys
+systematically shrink, so attention-like aligned queries see a measured naive
+logit bias of `−0.1735` in attention units
+([#p12_qjl_mse_ablation.csv:bias_mean], aligned regime). Sub-4-bit operation
+therefore needs an explicit correction of the quantization residual, and the
+1-bit QJL sketch is the cheapest one that can be made *unbiased*.
+
+**Decision.** `kv_quant/qjl_sketch.py` gains a self-contained Gaussian-QJL
+reference: `quantize_k_int2_qjl` packs the INT2 base (4 crumbs/byte,
+layout-pinned) plus `M = 64` projection sign bits (two `uint32` words) and the
+FP16 residual norm; `estimate_qjl_logits_ref` adds the unbiased residual term
+`√(π/2)/M · ‖r‖ · ⟨S q, sign(S r)⟩`. The Gaussian projection is mandatory:
+the half-normal identity `E[|s₁|] = √(2/π)` requires rotational invariance that
+Rademacher `±1` rows do not possess — the factor is direction-dependent
+(exact for dense residuals only by CLT approximation, wrong for concentrated
+ones). The committed ablation measures both: on this fixture's dense residuals
+the Rademacher variant happens to track the Gaussian
+(bias `0.001482` vs `0.002765`, MSE ratio `0.2675` vs `0.2665` at `M=64`,
+[#p12_qjl_mse_ablation.csv:bias_mean],
+[#p12_qjl_mse_ablation.csv:mse_ratio_vs_naive]) — recorded as the empirical
+boundary of the approximation, not as license to use it, since the contract
+requires exactness for every residual.
+The mathematical contract is derived in
+`docs/HADAMARD_AND_QJL_MATH.md`.
+
+**Trade-offs & Rejected Alternatives.**
+- *Ship INT2+QJL in the fused kernel*: rejected — 2-bit PTX unpack plus
+  per-group sign unpacking adds divergence and code paths to a memory-bound
+  loop that currently has none; the production path stays
+  K8V4 / K4V4+Hadamard (ADR-009) with INT4/INT8 unpack only.
+- *Rademacher projection (cheaper multiply)*: rejected for the contract —
+  the constant is direction-dependent (CLT approximation on dense residuals,
+  wrong on concentrated ones); the committed ablation shows the two are close
+  on dense fixture residuals ([#p12_qjl_mse_ablation.csv:bias_mean]), which
+  is the *approximation's* boundary, not an exactness guarantee.
+- *FP32 residual norm*: rejected for the prototype packing contract (FP16
+  keeps the payload small; its rounding bias is below the `0.01` gate,
+  [#p12_qjl_mse_ablation.csv:bias_mean]).
+- *Larger fixed M*: rejected for the packing contract (`M = 64` = two words);
+  the pre-declared ladder shows `1/M` MSE decay instead
+  ([#p12_qjl_mse_ablation.csv:mse]).
+
+**Measured gates (1000 fixture-derived `D=128` head-pairs, aligned queries).**
+QJL bias `+0.00277 < 0.01` versus naive `−0.1735`
+([#p12_qjl_mse_ablation.csv:bias_mean]); MSE ratio `0.2665 < 0.35`
+([#p12_qjl_mse_ablation.csv:mse_ratio_vs_naive]). Disclosed boundary: with
+*independent* queries the sketch's own variance dominates and the ratio at
+`M=64` is `2.914 ≈ (π/2)·D/M`, passing the `0.35` gate only at
+`M ≈ 512` ([#p12_qjl_mse_ablation.csv:mse_ratio_vs_naive]) — QJL is a
+bias-removal tool, not a variance reducer.
+
+**Verification Artifact.** `tests/test_qjl_sketch.py` (3-way gate: packing
+parity vs the analytical grid; bit-identical reproducibility at fixed seed;
+the statistical bias/MSE gates above), `bench/data/p12_qjl_mse_ablation.csv`
+(+ manifest, construction disclosed), `docs/HADAMARD_AND_QJL_MATH.md`,
+`rfc/reviews/qjl-prototype-review.md`.
+
+---
+
 ## Provenance note
 
 Every numeric claim resolves to a committed CSV under `bench/data/` via
