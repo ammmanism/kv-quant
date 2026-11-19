@@ -1,0 +1,24 @@
+{
+  "git_sha": "2efe2ba19d9d1d14879392816b44a3c637905122",
+  "timestamp_utc": "2026-11-19T13:38:57.439706+00:00",
+  "model_id": "Qwen/Qwen2.5-7B-Instruct",
+  "param_count_b": 7.61,
+  "num_q_heads": 28,
+  "num_kv_heads": 4,
+  "rotary_dim": 128,
+  "gpu_name": "cpu-only-ci",
+  "seed": 42,
+  "sha256_csv": "5ee7c8bdda4ae8116141041e8ecdf8da95e6ba59ebd9b841bdab07676a654cb3",
+  "extra": {
+    "description": "Ragged-batch CoW concurrency capacity and bandwidth-bound decode throughput",
+    "mode": "capacity model + modeled throughput (no GPU on host)",
+    "geometry": "32 layers x 4 KV heads x 128 head_dim = 16384 elems/token per K or V tensor",
+    "shared_prefix_tokens": 24000,
+    "sink_tokens": 4,
+    "bytes_source": "kv_quant.layout.bytes_per_elem (golden-hashed contract)",
+    "throughput_model": "bandwidth-bound: bytes_per_us = dram_total_bytes/duration_us from p7_ncu_bandwidth fused rows at the matching seq_len; tok/s = N*1e6/((shared + N*private)/bytes_per_us). Upper bound: ignores attention/softmax compute and assumes ideal CoW page sharing.",
+    "source_csvs": [
+      "bench/data/p7_ncu_bandwidth.csv"
+    ]
+  }
+}

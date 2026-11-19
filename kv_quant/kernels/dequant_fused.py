@@ -37,6 +37,27 @@ GPU_KERNEL_AVAILABLE = HAS_TRITON and HAS_CUDA
 if _HAS_TRITON:
 
     @triton.jit
+    def _store_neutral_partials(
+        M_PARTIAL,
+        L_PARTIAL,
+        ACC_PARTIAL,
+        OUT_IDX,
+        GQA_Q: tl.constexpr,
+        HEAD_DIM: tl.constexpr,
+    ):
+        """Neutral split-K partials for a shard with no tokens (ADR-011)."""
+        rows = tl.arange(0, GQA_Q)
+        tl.store(M_PARTIAL + OUT_IDX + rows, tl.full((GQA_Q,), -float("inf"), tl.float32))
+        tl.store(L_PARTIAL + OUT_IDX + rows, tl.zeros((GQA_Q,), tl.float32))
+        tl.store(
+            ACC_PARTIAL
+            + OUT_IDX * HEAD_DIM
+            + rows[:, None] * HEAD_DIM
+            + tl.arange(0, HEAD_DIM)[None, :],
+            tl.zeros((GQA_Q, HEAD_DIM), tl.float32),
+        )
+
+    @triton.jit
     def _splitk_paged_quant_attn_kernel(
         Q,
         K_PAGES,
@@ -46,7 +67,7 @@ if _HAS_TRITON:
         V_SCALES,
         V_ZPS,
         BLOCK_TABLE,
-        KV_LEN,
+        CONTEXT_LEN,
         HEAD_K_BITS,
         M_PARTIAL,
         L_PARTIAL,
@@ -73,6 +94,11 @@ if _HAS_TRITON:
         HEAD_K_BITS + kv_head. Every program maps to exactly one kv_head, so
         the 4-bit/8-bit unpack branch below is uniform across the whole thread
         block -- zero intra-warp divergence.
+
+        ADR-011: CONTEXT_LEN is the ragged [B] tensor; each program reads its
+        own batch item's length and skips split-K shards entirely past it.
+        NOTE: a batch item with context_len == 0 must be excluded from the
+        launch (an all-neutral reduction is 0/0); the CPU reference zeroes it.
         """
         bh = tl.program_id(0)
         split = tl.program_id(1)
@@ -80,7 +106,9 @@ if _HAS_TRITON:
         kv_head = bh % NUM_KV_HEADS
         k_bits = tl.load(HEAD_K_BITS + kv_head)
 
-        kv_len = tl.load(KV_LEN + batch)
+        # Ragged batch (ADR-011): every program reads ITS batch item's context
+        # length, so one launch serves heterogeneous [B] sequence lengths.
+        kv_len = tl.load(CONTEXT_LEN + batch)
         q_offset = batch * NUM_Q_HEADS * Q_LEN * HEAD_DIM + kv_head * GQA_GROUP * Q_LEN * HEAD_DIM
         q = tl.load(Q + q_offset + tl.arange(0, GQA_GROUP * Q_LEN * HEAD_DIM)).to(tl.float32)
         q = tl.reshape(q, (GQA_GROUP * Q_LEN, HEAD_DIM))
@@ -88,6 +116,20 @@ if _HAS_TRITON:
         tokens_per_split = tl.cdiv(kv_len, NUM_SPLITS)
         start = split * tokens_per_split
         end = tl.minimum(start + tokens_per_split, kv_len)
+
+        # Split-K shard entirely past this batch item's ragged length: emit
+        # neutral partials (m=-inf, l=0, acc=0) so the reduction kernel sees a
+        # well-formed contribution and never reads out-of-bounds pages.
+        if start >= kv_len:
+            out_idx0 = (
+                batch * NUM_KV_HEADS * NUM_SPLITS * (GQA_GROUP * Q_LEN)
+                + kv_head * NUM_SPLITS * (GQA_GROUP * Q_LEN)
+                + split * (GQA_GROUP * Q_LEN)
+            )
+            _store_neutral_partials(
+                M_PARTIAL, L_PARTIAL, ACC_PARTIAL, out_idx0, GQA_GROUP * Q_LEN, HEAD_DIM
+            )
+            return
 
         m_i = tl.full((GQA_GROUP * Q_LEN,), -float("inf"), tl.float32)
         l_i = tl.zeros((GQA_GROUP * Q_LEN,), tl.float32)
@@ -247,7 +289,9 @@ def fused_splitk_attention_cpu(
         k_pages/v_pages: (num_pages, page_bytes) uint8 packed K/V payloads.
         k_params/v_params: per-page lists of QuantParams per channel.
         block_table: (batch, max_pages) int64 logical-to-physical page map.
-        kv_len: (batch,) valid token counts.
+        kv_len: (batch,) valid token counts — the ragged context-lens tensor;
+            each batch item is processed at its own length, and split-K shards
+            past that length contribute nothing (ADR-011).
         num_kv_heads: number of KV heads (GQA).
         num_splits: split-K parallel shards (math is identical to 1 split).
         head_k_bits: ADR-009 per-KV-head K bit-widths. When given it
@@ -264,6 +308,11 @@ def fused_splitk_attention_cpu(
 
     for b in range(batch):
         length = int(kv_len[b].item())
+        if length == 0:
+            # Ragged batch may carry a degenerate item; softmax over an empty
+            # context is NaN, so emit a zero output for that row (ADR-011).
+            outputs.append(torch.zeros(num_q_heads, q_len, head_dim, dtype=torch.float16))
+            continue
         k_toks: list[torch.Tensor] = []
         v_toks: list[torch.Tensor] = []
         for p in range((length + group_size - 1) // group_size):

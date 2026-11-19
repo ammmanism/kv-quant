@@ -395,6 +395,81 @@ the statistical bias/MSE gates above), `bench/data/p12_qjl_mse_ablation.csv`
 
 ---
 
+## ADR-011: Self-Contained Ragged-Batch Paged Runner vs. External Engine Coupling
+
+**Status:** Accepted (simulation/reference serving layer; not a production
+engine).
+**Date/Tag:** `v1.4.0-ragged-serving`.
+
+**Context.** Studying multi-agent concurrency requires serving many
+heterogeneous requests (`context_lens[B]`) over shared prefixes. Coupling to an
+upstream scheduler (vLLM) would mean weeks inside churning internals we do not
+own, and any measurement would conflate our cache with their admission policy.
+The repo already has the necessary primitives: `HybridPagedKVCache` with
+content-addressed pages, `fork_prefix`/`copy_on_write` ref-counting, and a
+fused Split-K kernel that reads one KV head per program.
+
+**Decision.** `kv_quant/ragged_runner.py` provides `RaggedPagedBatchRunner`, an
+orchestrator over the existing cache:
+1. A root session seals the shared system/repository prefix; forked sessions
+   share those physical pages (`ref_count = N`) and allocate private pages only
+   for divergent turns (CoW), reusing `fork_prefix` rather than re-implementing
+   page sharing.
+2. Prefix identity is chained and deterministic:
+   `chain_prefix_hash(parent_hash, token_block, config_id)` = SHA256 over
+   `(parent_hash, block bytes, config_id)`; physical page identity remains the
+   cache's payload hash (Invariant 3 is never bypassed).
+3. `append()` enforces `max_physical_pages` **before** sealing; the estimate is
+   conservative (assumes every new block allocates, even when dedup would
+   share). A rejected append allocates nothing.
+4. `dequant_fused.py` consumes the ragged `[B]` lengths: the kernel argument is
+   now `CONTEXT_LEN`, each program loads its own batch item's length, and a
+   Split-K shard entirely past that length stores neutral partials
+   (`m=-inf, l=0, acc=0`) instead of reading out-of-bounds pages. The CPU
+   reference returns exact zeros for zero-length items (softmax over an empty
+   context is NaN).
+
+**Trade-offs & Rejected Alternatives.**
+- *vLLM scheduler integration*: rejected — weeks of upstream coupling, and the
+  scheduler's own batching would confound cache-level conclusions. The runner
+  is deliberately self-contained and testable on CPU.
+- *Second cache implementation for batches*: rejected — duplicates layout and
+  CoW logic; the runner delegates to `HybridPagedKVCache`.
+- *Runner access to cache internals (`_pages`, `_pages_by_hash`) for release*:
+  accepted as the lesser evil versus editing `cache.py` in the same pass
+  (one-core-file-per-pass rule); the coupling is confined to `complete()` and
+  `pool_stats()` and is covered by the 500-completion leak gate.
+- *GPU zero-length items*: the kernel emits neutral partials, but a batch item
+  with `context_len = 0` must still be excluded from the launch or zeroed by
+  the caller — an all-neutral reduction is `0/0`. The CPU reference handles it;
+  this is recorded rather than papered over.
+- *Measured throughput*: impossible on this CPU-only host. The committed
+  throughput is a bandwidth-bound **upper bound** (see below), not a GPU
+  measurement.
+
+**Modeled capacity and throughput (no GPU on host).** With Qwen2.5-7B KV
+geometry (32 layers × 4 KV heads × 128 head_dim), a 24000-token shared prefix
+(exactly 375 blocks of 64), and `kv_quant.layout` bytes/elem, a 24 GiB budget
+holds `11` FP16 sessions at 32K but `161` `K4V4+Hadamard+CoW` sessions — a
+`14.6×` concurrency gain
+([#p13_ragged_concurrency.csv:max_concurrent_sessions]); at 64K the same
+comparison is `5` vs `34` sessions ([#p13_ragged_concurrency.csv:max_concurrent_sessions]).
+Modeled decode throughput is bandwidth-bound from the committed
+`p7_ncu_bandwidth` fused counters (`bytes_per_us`), reading the shared prefix
+once per step: `8894.7` tok/s for the 24 GiB/32K `K4V4+Hadamard+CoW` point
+versus `696.7` for FP16 ([#p13_ragged_concurrency.csv:modeled_decode_tok_s]).
+Throughput is budget-invariant per (config, context) by construction — extra
+budget buys concurrency, not per-token rate — and ignores attention/softmax
+compute, so treat it as an upper bound, not a promise.
+
+**Verification Artifact.** `tests/test_ragged_runner.py` (shared-prefix
+ref-counts, CoW divergence isolation, capacity rejection, zero leaks after
+`500` completions, batch-16 ragged vs batch-1 parity incl. zero-length items,
+prefix-hash determinism/sensitivity), `bench/data/p13_ragged_concurrency.csv`
+(+ manifest), `rfc/reviews/ragged-serving-review.md`.
+
+---
+
 ## Provenance note
 
 Every numeric claim resolves to a committed CSV under `bench/data/` via
