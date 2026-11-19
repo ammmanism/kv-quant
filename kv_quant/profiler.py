@@ -1,7 +1,7 @@
 """Retrieval-head vs streaming-head adaptive mixed-precision profiling.
 
 Three metrics per (layer, kv_head): distant attention mass, attention entropy,
-and INT4 quantization KL sensitivity. A schedule compiler assigns per-head
+and INT4 quantization KL perturbation. A schedule compiler assigns per-head
 bit-widths under an average-bit budget.
 """
 
@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 
+import pandas as pd
 import torch
 
 
@@ -235,3 +236,144 @@ def compile_head_bit_schedule(
 def head_profiles_to_rows(profiles: list[HeadProfile]) -> list[dict[str, object]]:
     """Serialize HeadProfile objects to CSV-compatible rows."""
     return [asdict(p) for p in profiles]
+
+
+def profile_calibration(
+    attn_logits: torch.Tensor,
+    sink_tokens: int = 4,
+    local_window: int = 128,
+    quantize_fn: Callable[[torch.Tensor], torch.Tensor] | None = None,
+) -> list[HeadProfile]:
+    """Profile every (layer, kv_head) over a multi-sequence calibration set.
+
+    Args:
+        attn_logits: Raw attention logits of shape
+            (num_layers, num_kv_heads, num_seqs, q_len, k_len).
+        sink_tokens: Leading sink tokens excluded from "distant" mass.
+        local_window: Trailing local window excluded from "distant" mass.
+        quantize_fn: Optional INT4 perturbation applied to logits for the KL
+            measurement; when None a deterministic INT4-style noise is used.
+
+    Returns:
+        One HeadProfile per (layer, kv_head), each metric averaged over the
+        calibration sequences.
+
+    Raises:
+        ValueError: If ``attn_logits`` does not have 5 dimensions.
+    """
+    if attn_logits.dim() != 5:
+        raise ValueError(
+            f"expected (layers, kv_heads, seqs, q_len, k_len), got {tuple(attn_logits.shape)}"
+        )
+    num_layers, num_heads, num_seqs = (
+        attn_logits.shape[0],
+        attn_logits.shape[1],
+        attn_logits.shape[2],
+    )
+    probs = torch.softmax(attn_logits.to(torch.float32), dim=-1)
+
+    per_seq: dict[tuple[int, int], list[HeadProfile]] = {}
+    for layer in range(num_layers):
+        for seq in range(num_seqs):
+            # profile_heads consumes (num_heads, q_len, k_len) probabilities.
+            for prof in profile_heads(
+                probs[layer, :, seq],
+                layer_idx=layer,
+                sink_tokens=sink_tokens,
+                local_window=local_window,
+                quantize_fn=quantize_fn,
+            ):
+                per_seq.setdefault((prof.layer_idx, prof.kv_head_idx), []).append(prof)
+
+    profiles: list[HeadProfile] = []
+    for layer in range(num_layers):
+        for head in range(num_heads):
+            seqs = per_seq[(layer, head)]
+            n = max(1, len(seqs))
+            profiles.append(
+                HeadProfile(
+                    layer_idx=layer,
+                    kv_head_idx=head,
+                    distant_attn_mass=sum(p.distant_attn_mass for p in seqs) / n,
+                    attn_entropy=sum(p.attn_entropy for p in seqs) / n,
+                    kl_sensitivity=sum(p.kl_sensitivity for p in seqs) / n,
+                )
+            )
+    return profiles
+
+
+def compile_head_schedule(
+    df: pd.DataFrame,
+    target_avg_bits: float = 4.5,
+    retrieval_k_bits: int = 8,
+    retrieval_v_bits: int = 4,
+    streaming_k_bits: int = 4,
+    streaming_v_bits: int = 4,
+) -> dict[tuple[int, int], tuple[int, int]]:
+    """Assign per-head bit-widths under an average-bit budget (ADR-009).
+
+    Heads are ranked by the retrieval score ``distant_attn_mass +
+    kl_perturbation`` (column name ``kl_sensitivity`` is accepted as a
+    legacy alias). The top fraction -- derived from the budget so that the
+    schedule's mean of (K + V) / 2 bits equals ``target_avg_bits`` -- becomes
+    a Retrieval/Induction head at ``(retrieval_k_bits, retrieval_v_bits)``
+    (default K8V4, protecting long-range softmax routing); every other head
+    becomes a Local/Streaming head at ``(streaming_k_bits, streaming_v_bits)``
+    (default K4V4 + Hadamard). At the default budget of 4.5 bits the derived
+    fraction is exactly 25%.
+
+    Ties are broken by (layer_idx, kv_head_idx) so the assignment is
+    deterministic for a fixed frame.
+
+    Args:
+        df: Frame with columns ``layer_idx``, ``kv_head_idx``,
+            ``distant_attn_mass`` and ``kl_perturbation``.
+        target_avg_bits: Budget for the schedule-wide mean of (K + V) / 2.
+        retrieval_k_bits: K bits for retrieval heads.
+        retrieval_v_bits: V bits for retrieval heads.
+        streaming_k_bits: K bits for streaming heads.
+        streaming_v_bits: V bits for streaming heads.
+
+    Returns:
+        Mapping ``(layer_idx, kv_head_idx) -> (k_bits, v_bits)``.
+
+    Raises:
+        ValueError: If required columns are missing, the frame is empty, or
+            the budget is outside the reachable range between the two classes'
+            average bits.
+    """
+    for col in ("layer_idx", "kv_head_idx", "distant_attn_mass", "kl_perturbation"):
+        if col not in df.columns and not (
+            col == "kl_perturbation" and "kl_sensitivity" in df.columns
+        ):
+            raise ValueError(f"missing required column: {col}")
+    if len(df) == 0:
+        raise ValueError("cannot compile a schedule from an empty frame")
+
+    kl_col = "kl_perturbation" if "kl_perturbation" in df.columns else "kl_sensitivity"
+    frame = df.copy()
+    frame["score"] = frame["distant_attn_mass"] + frame[kl_col]
+    ranked = frame.sort_values(
+        ["score", "layer_idx", "kv_head_idx"], ascending=[False, True, True], kind="mergesort"
+    )
+
+    high_avg = (retrieval_k_bits + retrieval_v_bits) / 2
+    low_avg = (streaming_k_bits + streaming_v_bits) / 2
+    if not low_avg <= target_avg_bits <= high_avg:
+        raise ValueError(
+            f"target_avg_bits={target_avg_bits} outside reachable range "
+            f"[{low_avg}, {high_avg}] for the two head classes"
+        )
+    fraction = (target_avg_bits - low_avg) / (high_avg - low_avg) if high_avg > low_avg else 0.0
+
+    n = len(ranked)
+    n_retrieval = min(n, max(1, round(n * fraction))) if fraction > 0 else 0
+    schedule: dict[tuple[int, int], tuple[int, int]] = {}
+    for rank, (_, row) in enumerate(ranked.iterrows()):
+        is_retrieval = rank < n_retrieval
+        schedule[(int(row["layer_idx"]), int(row["kv_head_idx"]))] = (
+            (retrieval_k_bits, retrieval_v_bits)
+            if is_retrieval
+            else (streaming_k_bits, streaming_v_bits)
+        )
+    return schedule

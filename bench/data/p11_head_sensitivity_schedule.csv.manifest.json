@@ -1,0 +1,18 @@
+{
+  "git_sha": "39f2144bc3c335f6935db2fc64b53236aae3295b",
+  "timestamp_utc": "2026-11-19T04:18:34.348552+00:00",
+  "model_id": "synthetic/bimodal-calibration (no model weights)",
+  "param_count_b": 0.0,
+  "num_q_heads": 8,
+  "num_kv_heads": 8,
+  "rotary_dim": 64,
+  "gpu_name": "cpu-only-ci",
+  "seed": 42,
+  "sha256_csv": "2a712857a218d7cf8c2a71372eedf004f5a86f1668e35864bc23ec58c84422ce",
+  "extra": {
+    "description": "Per-head sensitivity metrics and the compiled 4.5-bit mixed-precision schedule",
+    "calibration": "declared synthetic bimodal set: 16 sequences x 8K context, 12x8 heads, ground truth ~20% retrieval-biased; null control rows profile the committed Gaussian micro_kv_2k.pt fixture (16 query rows x 2K)",
+    "schedule_target_avg_bits": 4.5,
+    "retrieval_fraction": 0.25
+  }
+}

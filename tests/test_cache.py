@@ -1,5 +1,6 @@
 """Tests for 3-tier hybrid cache, CoW, profiler and wrapper."""
 
+import pytest
 import torch
 from kv_quant.cache import HybridPagedKVCache
 from kv_quant.config import CacheConfig, QuantConfig
@@ -157,3 +158,54 @@ def test_wrapper_zero_reload_switch():
     wrapper.set_kv_config(new_cfg)
     assert wrapper.quant_config.k_bits == 4
     assert wrapper.cache is None
+
+
+def test_head_schedule_per_head_precision():
+    """ADR-009: retrieval head at K8 must dequantize more accurately than a K4 head."""
+    cfg = QuantConfig(k_bits=4, v_bits=4, group_size=64, sink_tokens=0)
+    cache = HybridPagedKVCache(cfg, CacheConfig())
+    cache.set_head_schedule({(0, 0): (8, 4), (0, 1): (4, 4)}, layer_idx=0)
+    k = torch.randn(128, 2, 8, dtype=torch.float16)
+    v = torch.randn(128, 2, 8, dtype=torch.float16)
+    cache.append(k, v)
+    kk, vv = cache.materialize()
+    assert kk.shape == k.shape
+    err_head0 = (kk[:, 0].float() - k[:, 0].float()).pow(2).mean().item()
+    err_head1 = (kk[:, 1].float() - k[:, 1].float()).pow(2).mean().item()
+    assert err_head0 < err_head1, (err_head0, err_head1)
+    # The sealed page records the per-head widths it was quantized with.
+    page = cache._pages[cache.page_table[0]]
+    assert page.k_bits == [8, 4]
+
+
+def test_head_schedule_validation():
+    cache = make_cache()
+    with pytest.raises(ValueError):
+        cache.set_head_schedule({(0, 0): (8, 4), (1, 1): (4, 4)})  # multi-layer, no layer_idx
+    with pytest.raises(ValueError):
+        cache.set_head_schedule({(3, 0): (8, 4)}, layer_idx=0)  # no heads for this layer
+
+
+def test_head_schedule_survives_fork_and_cow():
+    cfg = QuantConfig(k_bits=4, v_bits=4, group_size=64, sink_tokens=0)
+    cache = HybridPagedKVCache(cfg, CacheConfig())
+    cache.set_head_schedule({(0, 0): (8, 4), (0, 1): (4, 4)})
+    cache.append(
+        torch.randn(128, 2, 8, dtype=torch.float16), torch.randn(128, 2, 8, dtype=torch.float16)
+    )
+    fork = cache.fork_prefix()
+    assert fork.head_schedule == cache.head_schedule
+    clone_id = fork.copy_on_write(fork.page_table[0])
+    assert fork._pages[clone_id].k_bits == [8, 4]
+
+
+def test_head_schedule_missing_head_uses_config_default():
+    """Heads absent from the schedule fall back to the config bit-width."""
+    cfg = QuantConfig(k_bits=8, v_bits=8, group_size=64, sink_tokens=0)
+    cache = HybridPagedKVCache(cfg, CacheConfig())
+    cache.set_head_schedule({(0, 0): (4, 4)})  # head 1 unspecified -> K8V8
+    cache.append(
+        torch.randn(128, 2, 8, dtype=torch.float16), torch.randn(128, 2, 8, dtype=torch.float16)
+    )
+    kk, _ = cache.materialize()
+    assert cache._pages[cache.page_table[0]].k_bits == [4, 8]

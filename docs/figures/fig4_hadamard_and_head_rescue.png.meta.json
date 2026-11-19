@@ -1,0 +1,21 @@
+{
+  "generating_script": "scripts/generate_phase11_artifacts.py",
+  "source_csvs": [
+    "bench/data/p11_head_sensitivity_schedule.csv",
+    "bench/data/p11_head_rescue_curve.csv",
+    "bench/data/p10_hadamard_rotation.csv"
+  ],
+  "csv_hashes": [
+    "2a712857a218d7cf8c2a71372eedf004f5a86f1668e35864bc23ec58c84422ce",
+    "55691ae8a8e73bf4272185612b371caf821631424fa0548ab979168c8a2f24ef",
+    "281b0c48cc74fac08bb128593d21f499aaa5202ed50a6d5c21068b0f14876944"
+  ],
+  "width_px": 4469,
+  "height_px": 1618,
+  "dpi": 300,
+  "panels": [
+    "A: Layer x KV-head distant attention mass heatmap with the compiled K8V4 retrieval assignments outlined",
+    "B: Accuracy vs context (4K..128K): v1.0 K4V4 post-RoPE cliff vs K4V4 + Hadamard vs 4.5-bit head-adaptive + Hadamard vs FP16"
+  ],
+  "activation_fixture": "bench/activations/micro_kv_2k.pt"
+}

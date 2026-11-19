@@ -47,6 +47,7 @@ if _HAS_TRITON:
         V_ZPS,
         BLOCK_TABLE,
         KV_LEN,
+        HEAD_K_BITS,
         M_PARTIAL,
         L_PARTIAL,
         ACC_PARTIAL,
@@ -58,7 +59,6 @@ if _HAS_TRITON:
         PAGE_TOKENS: tl.constexpr,
         GROUP_SIZE: tl.constexpr,
         NUM_SPLITS: tl.constexpr,
-        K_BITS: tl.constexpr,
         BLOCK_K: tl.constexpr,
         SINK: tl.constexpr,
         EVICT_POLICY: tl.constexpr,
@@ -68,11 +68,17 @@ if _HAS_TRITON:
         Grid: (batch * num_kv_heads, num_splits). Each program processes one
         KV-head shard, loads packed words once into SRAM, dots against all
         GQA_GROUP query heads, and writes partial online-softmax stats.
+
+        ADR-009: the per-head K bit-width is a single scalar load from
+        HEAD_K_BITS + kv_head. Every program maps to exactly one kv_head, so
+        the 4-bit/8-bit unpack branch below is uniform across the whole thread
+        block -- zero intra-warp divergence.
         """
         bh = tl.program_id(0)
         split = tl.program_id(1)
         batch = bh // NUM_KV_HEADS
         kv_head = bh % NUM_KV_HEADS
+        k_bits = tl.load(HEAD_K_BITS + kv_head)
 
         kv_len = tl.load(KV_LEN + batch)
         q_offset = batch * NUM_Q_HEADS * Q_LEN * HEAD_DIM + kv_head * GQA_GROUP * Q_LEN * HEAD_DIM
@@ -96,14 +102,15 @@ if _HAS_TRITON:
             physical = tl.load(
                 BLOCK_TABLE + batch * tl.num_programs(0) + page_idx, mask=mask, other=0
             )
-            nibble_per_byte = 2 if K_BITS == 4 else 1
-            packed_index = physical * (PAGE_TOKENS * HEAD_DIM * K_BITS // 8) + slot * (
-                HEAD_DIM * K_BITS // 8
+            # Per-head packed width (pages are per-head shards in this model):
+            # 4-bit packs two elements per byte, 8-bit packs one.
+            packed_index = physical * (PAGE_TOKENS * HEAD_DIM * k_bits // 8) + slot * (
+                HEAD_DIM * k_bits // 8
             )
             packed = tl.load(
                 K_PAGES + packed_index, mask=mask, other=0, eviction_policy=EVICT_POLICY
             )
-            if K_BITS == 4:
+            if k_bits == 4:
                 lo = (packed & 0x0F).to(tl.float32)
                 hi = ((packed >> 4) & 0x0F).to(tl.float32)
                 decoded = tl.interleave(lo, hi)
@@ -231,6 +238,7 @@ def fused_splitk_attention_cpu(
     group_size: int = 64,
     num_splits: int = 4,
     sink_tokens: int = 4,
+    head_k_bits: list[int] | None = None,
 ) -> torch.Tensor:
     """CPU reference: fused dequant + GQA broadcast + online-softmax attention.
 
@@ -242,6 +250,10 @@ def fused_splitk_attention_cpu(
         kv_len: (batch,) valid token counts.
         num_kv_heads: number of KV heads (GQA).
         num_splits: split-K parallel shards (math is identical to 1 split).
+        head_k_bits: ADR-009 per-KV-head K bit-widths. When given it
+            overrides ``k_bits`` for each head's channels, mirroring the
+            Triton kernel's per-program HEAD_K_BITS lookup; rows are padded
+            to the widest packed length and unpacking honors ``original_size``.
 
     Returns:
         (batch, num_q_heads, q_len, head_dim) FP16 attention output.
@@ -262,11 +274,13 @@ def fused_splitk_attention_cpu(
             for c in range(channels):
                 kp = k_params[pid][c]
                 vp = v_params[pid][c]
+                head = c // head_dim
+                head_bits = k_bits if head_k_bits is None else head_k_bits[head]
                 k_vec = _dequantize_packed_vectorized(
                     k_pages[pid][c],
                     kp.scale,
                     kp.zero_point,
-                    k_bits,
+                    head_bits,
                     k_scheme,
                     group_size,
                 )
