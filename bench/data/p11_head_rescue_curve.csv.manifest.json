@@ -1,0 +1,19 @@
+{
+  "git_sha": "39f2144bc3c335f6935db2fc64b53236aae3295b",
+  "timestamp_utc": "2026-11-19T04:18:34.810853+00:00",
+  "model_id": "synthetic/bimodal-calibration (no model weights)",
+  "param_count_b": 0.0,
+  "num_q_heads": 8,
+  "num_kv_heads": 8,
+  "rotary_dim": 64,
+  "gpu_name": "cpu-only-ci",
+  "seed": 42,
+  "sha256_csv": "55691ae8a8e73bf4272185612b371caf821631424fa0548ab979168c8a2f24ef",
+  "extra": {
+    "description": "Modeled rescue-curve projection: v1.0 cliff vs Hadamard vs head-adaptive",
+    "hadamard_delta_sqnr_db": 7.349,
+    "hadamard_delta_source": "bench/data/p10_hadamard_rotation.csv",
+    "projection": "err(X) = max(0, acc_fp16 - acc_X) per replay cell; hadamard: err(K4V4) * 10**(-delta_db/10); head-adaptive: retrieval_fraction * err(K8V4) + (1-retrieval_fraction) * err(K4V4) * factor",
+    "retrieval_fraction": 0.25
+  }
+}

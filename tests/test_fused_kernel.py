@@ -230,6 +230,130 @@ def test_gpu_kernel_parity():
     run_parity_case(513, 4, 4, "sym", "asym", 64, 4)
 
 
+def _build_pages_mixed_k(k, v, group_size, k_bits_by_head, v_bits, k_scheme, v_scheme):
+    """ADR-009 pages: per-head K bit-widths, channel rows padded to the widest."""
+    tokens = k.shape[0]
+    num_pages = max(1, math.ceil(tokens / group_size))
+    channels = NUM_KV_HEADS * HEAD_DIM
+
+    def packed_len(bits: int) -> int:
+        return {16: group_size * 2, 8: group_size, 4: group_size // 2, 2: group_size // 4}[bits]
+
+    max_pk = max(packed_len(b) for b in k_bits_by_head)
+    k_pages = torch.zeros(num_pages, channels, max_pk, dtype=torch.uint8)
+    v_pages = torch.zeros(num_pages, channels, packed_len(v_bits), dtype=torch.uint8)
+    k_params: list[list[QuantParams]] = []
+    v_params: list[list[QuantParams]] = []
+    for p in range(num_pages):
+        kp_page, vp_page = [], []
+        for c in range(channels):
+            h, d = divmod(c, HEAD_DIM)
+            lo, hi = p * group_size, min((p + 1) * group_size, tokens)
+            kchan = k[lo:hi, h, d].contiguous() if hi > lo else torch.zeros(1, dtype=torch.float32)
+            vchan = v[lo:hi, h, d].contiguous() if hi > lo else torch.zeros(1, dtype=torch.float32)
+            pk, qk = quantize_group(kchan, k_bits_by_head[h], k_scheme)
+            pv, qv = quantize_group(vchan, v_bits, v_scheme)
+            k_pages[p, c, : pk.shape[0]] = pk
+            v_pages[p, c, : pv.shape[0]] = pv
+            kp_page.append(qk)
+            vp_page.append(qv)
+        k_params.append(kp_page)
+        v_params.append(vp_page)
+    block_table = torch.arange(num_pages, dtype=torch.int64).unsqueeze(0)
+    return k_pages, v_pages, k_params, v_params, block_table
+
+
+def test_head_adaptive_parity_cpu():
+    """Mixed per-head K widths must match a per-head dequant reference."""
+    from kv_quant.kernels.dequant_fused import _dequantize_packed_vectorized
+
+    torch.manual_seed(42)
+    seq_len, group_size, gqa = 513, 64, 4
+    k_bits_by_head = [8, 4, 4, 4]  # head 0 retrieval (K8), rest streaming (K4)
+    q = torch.randn(1, NUM_KV_HEADS * gqa, 8, HEAD_DIM, dtype=torch.float16)
+    k = torch.randn(seq_len, NUM_KV_HEADS, HEAD_DIM, dtype=torch.float16)
+    v = torch.randn(seq_len, NUM_KV_HEADS, HEAD_DIM, dtype=torch.float16)
+
+    k_pages, v_pages, kp, vp, bt = _build_pages_mixed_k(
+        k, v, group_size, k_bits_by_head, 4, "sym", "asym"
+    )
+    fused = fused_splitk_attention_cpu(
+        q,
+        k_pages,
+        v_pages,
+        kp,
+        vp,
+        bt,
+        torch.tensor([seq_len], dtype=torch.int64),
+        num_kv_heads=NUM_KV_HEADS,
+        k_bits=4,
+        v_bits=4,
+        k_scheme="sym",
+        v_scheme="asym",
+        group_size=group_size,
+        head_k_bits=k_bits_by_head,
+    )
+
+    k_ref = torch.zeros_like(k)
+    v_ref = torch.zeros_like(v)
+    channels = NUM_KV_HEADS * HEAD_DIM
+    for p in range(bt.shape[1]):
+        for c in range(channels):
+            h, d = divmod(c, HEAD_DIM)
+            lo, hi = p * group_size, min((p + 1) * group_size, seq_len)
+            if hi <= lo:
+                continue
+            kv = _dequantize_packed_vectorized(
+                k_pages[p, c],
+                kp[p][c].scale,
+                kp[p][c].zero_point,
+                k_bits_by_head[h],
+                "sym",
+                hi - lo,
+            )
+            vv = _dequantize_packed_vectorized(
+                v_pages[p, c],
+                vp[p][c].scale,
+                vp[p][c].zero_point,
+                4,
+                "asym",
+                hi - lo,
+            )
+            k_ref[lo:hi, h, d] = kv
+            v_ref[lo:hi, h, d] = vv
+    naive = naive_attention(q, k_ref, v_ref, gqa)
+    assert torch.allclose(fused, naive, atol=1e-3, rtol=1e-3), (
+        f"head-adaptive mismatch maxdiff={(fused.float() - naive.float()).abs().max().item()}"
+    )
+    # The retrieval head (K8) must agree with the naive path more tightly
+    # than the naive path built with uniform K4 would.
+    fused_uniform = fused_splitk_attention_cpu(
+        q,
+        k_pages,
+        v_pages,
+        kp,
+        vp,
+        bt,
+        torch.tensor([seq_len], dtype=torch.int64),
+        num_kv_heads=NUM_KV_HEADS,
+        k_bits=4,
+        v_bits=4,
+        k_scheme="sym",
+        v_scheme="asym",
+        group_size=group_size,
+    )
+    err_adaptive = (fused.float() - naive.float()).abs().max().item()
+    err_uniform = (fused_uniform.float() - naive.float()).abs().max().item()
+    assert err_adaptive < err_uniform, (err_adaptive, err_uniform)
+
+
+@pytest.mark.gpu
+def test_gpu_head_adaptive_parity():
+    if not GPU_KERNEL_AVAILABLE:
+        pytest.skip("Triton + CUDA required")
+    test_head_adaptive_parity_cpu()
+
+
 def test_cpu_dispatch_matches_reference():
     """fused_splitk_attention dispatches to the CPU reference without GPU."""
     torch.manual_seed(7)

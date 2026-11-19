@@ -351,6 +351,90 @@ the device path as unverified.
 
 ---
 
+## ADR-009: Retrieval-Head vs. Streaming-Head Mixed Precision
+
+**Status**: Accepted — **Implements**: ADR-007 item 2 (v1.2.0-head-profiler).
+
+**Context.** v1.1 (ADR-008) rescued the INT4-K cliff with an orthogonal
+rotation, but not every head is equally fragile: retrieval/induction heads
+route long-range softmax mass and are known to concentrate accuracy loss,
+while local streaming heads tolerate compression. A profiler that scores
+every `(layer_idx, kv_head_idx)` therefore lets a fixed bit budget go where
+it buys accuracy. Three scores per head: `distant_attn_mass` (attention mass
+outside the sink+local windows), `attn_entropy`, and `kl_perturbation`
+(output KL under an INT4 perturbation of that head's logits).
+
+**Decision.**
+1. `profiler.compile_head_schedule(df, target_avg_bits=4.5)` ranks heads by
+   `distant_attn_mass + kl_perturbation` and splits them so the schedule-wide
+   mean of (K + V)/2 equals the budget: top-ranked heads become
+   Retrieval/Induction heads at **K8V4** (long-range routing protected), the
+   rest become Streaming heads at **K4V4 + Hadamard**. At the default 4.5-bit
+   budget the derived fraction is exactly 25%. Ties break by (layer, head) so
+   the schedule is deterministic.
+2. `HybridPagedKVCache.set_head_schedule()` installs a schedule; pages are
+   sealed per-head-width and record their `k_bits`/`v_bits`, so CoW cloning
+   and dequantization stay consistent.
+3. `dequant_fused.py` reads the per-head width **once per thread block** —
+   the grid is `(batch * num_kv_heads, num_splits)`, so every program maps to
+   one `kv_head` and `k_bits = tl.load(HEAD_K_BITS + kv_head)` is a uniform
+   scalar; the 4-bit/8-bit unpack branch is therefore warp-uniform. The CPU
+   reference path mirrors this with a per-head `head_k_bits` list and is
+   parity-tested against a per-head dequant oracle
+   (`test_head_adaptive_parity_cpu`).
+
+**Evidence.** The schedule CSV commits two calibration sets
+([#p11_head_sensitivity_schedule.csv:distant_attn_mass]). The *design*
+calibration is a declared synthetic bimodal set at the mandated shape
+(16 sequences × 8K context, 12 layers × 8 KV heads, ground truth ~20%
+retrieval-biased): the compiler achieves **recall 20/20** on the true
+retrieval heads with **precision 20/24** — the four extra picks are
+borderline streaming heads whose random distant mass edged above the gap
+(retrieval heads 0.596–1.000 vs streaming 0.557–0.594
+([#p11_head_sensitivity_schedule.csv:kl_perturbation] for the companion
+metric)). The *null control* profiles the committed Gaussian
+`micro_kv_2k.pt` fixture and exposes a metric property a reviewer must know:
+at 2K context the distant window covers 94% of the key range, so even uniform
+attention scores `distant_attn_mass` ≈ 0.94 — the metric is only comparable
+**within one calibration geometry**, and a short-context fixture cannot be
+used to nominate retrieval heads.
+
+**Honest deviation from the milestone target.** The milestone asked the
+4.5-bit head-adaptive curve to "match FP16 within 0.3% at 128K". It does not:
+the replay-adapter projection puts `head_adaptive_4p5_hadamard` at 0.9530
+against FP16 0.9788 at 128K — a **2.6% gap** — and it does not even dominate
+pure `k4v4_hadamard` (0.9576)
+([#p11_head_rescue_curve.csv:acc_mean]). The bound is structural: the replay
+model encodes K8V4 as a flat ~0.97 baseline, an irreducible ~2% FP16 gap, so
+*any* blend containing a K8V4 term inherits it. What the schedule does buy
+is visible in `delta_logp`: the adaptive curve has the lowest quantization
+drift of all quantized configs at every context (0.1358–0.2614 vs
+0.1464–0.2667 for pure Hadamard, and 1.1766 for the v1.0 cliff at 128K)
+([#p11_head_rescue_curve.csv:delta_logp]), and the whole family holds the
+v1.0 cliff (0.8455 at 32K) to ≥ 0.953. The 0.3% claim is reported as unmet
+rather than reached by choosing a friendlier projection.
+
+**Consequences.**
+- Two schedule compilers now coexist: the phase-2 three-tier
+  `compile_head_bit_schedule` (kept byte-stable for `p2_*` artifact
+  reproduction) and this two-tier `compile_head_schedule`. New code must use
+  the latter.
+- The CPU cache path pads every channel of a mixed-width page to the widest
+  packed length, so per-head bits do **not** shrink CPU-path page bytes; the
+  "4.5-bit" figure is theoretical byte accounting over
+  [#p11_head_sensitivity_schedule.csv:assigned_k_bits], realized only on the
+  per-head-width GPU unpack path.
+- V stays uniform: the kernel reads per-head *K* bits only (`HEAD_K_BITS`);
+  per-head V bits are recorded on the page but not yet dispatched, matching
+  the milestone's K-focused lookup.
+- The Triton change (runtime `HEAD_K_BITS` scalar replacing the `K_BITS`
+  constexpr) is GPU-only code and remains unverified on this CPU host per
+  ADR-006; the `gpu`-marked parity test covers it on dispatch.
+- No bit-layout change: the golden layout hash is untouched
+  (`913cd248…`), confirmed by the drift gate.
+
+---
+
 ## Provenance note
 
 Every numeric claim above resolves against a committed CSV under `bench/data/`
