@@ -1,0 +1,28 @@
+{
+  "git_sha": "b00ab487b4718be2141fa6b2597721bb0ab964f5",
+  "timestamp_utc": "2026-11-19T13:21:49.936596+00:00",
+  "model_id": "synthetic/micro_kv_2k head-pairs (no model weights)",
+  "param_count_b": 0.0,
+  "num_q_heads": 8,
+  "num_kv_heads": 8,
+  "rotary_dim": 64,
+  "gpu_name": "cpu-only-ci",
+  "seed": 42,
+  "sha256_csv": "7045425f3e8336f1af477af590bd47e3cfa578bf081b7bfa2e1f57462d7fd74d",
+  "extra": {
+    "description": "Gaussian QJL residual sketch: bias and logit MSE vs FP16 ground truth",
+    "construction": "1000 key vectors of D=128 formed by seeded pairing (seed 2026) of two KV-head channel blocks of micro_kv_2k.pt (fixture head_dim is 64, so the mandated D=128 requires pairing); ground truth = exact float32 inner products attention-scaled by 1/sqrt(D)",
+    "query_regimes": "aligned: q = k/||k|| (attention-like; naive INT2 shrinkage bias is systematic); independent: seeded unit-random q (residual mean-zero; QJL sketch variance dominates, ratio ~ (pi/2)*D/M)",
+    "projection_seed": 42,
+    "m_ladder_predeclared": [
+      64,
+      128,
+      256,
+      512,
+      1024,
+      2048
+    ],
+    "packing_note": "mandated packing is m_bits=64 (two uint32 words); larger M rows are stored as unpacked sign references, not the production packing",
+    "theory": "QJL estimator variance ~ (pi/2)*||r||^2*||q||^2/M (Gaussian arcsine/half-normal law); independent-regime MSE ratio vs naive ~ (pi/2)*D/M"
+  }
+}

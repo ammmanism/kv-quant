@@ -7,10 +7,17 @@ and provide the unbiased estimator:
     <q, r>_QJL = sqrt(π/2) / D * ||r||_2 * <S q, z_k>
 """
 
+from __future__ import annotations
+
 import math
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal
 
 import torch
+
+if TYPE_CHECKING:  # pragma: no cover - avoids a runtime import cycle
+    from kv_quant.config import QuantConfig
+    from kv_quant.quantizer import QuantParams
 
 
 @dataclass(frozen=True)
@@ -300,3 +307,180 @@ def unpack_qjl_signs(packed: torch.Tensor, dim: int) -> torch.Tensor:
 
 # Constants for QJL
 QJL_SCALE_FACTOR = math.sqrt(math.pi / 2)  # sqrt(π/2) ≈ 1.2533
+
+
+# ---------------------------------------------------------------------------
+# v1.3.0 Gaussian QJL reference prototype (ADR-010)
+#
+# The functions below implement the EXACT Gaussian identity. The legacy
+# Rademacher helpers above are retained byte-stable for p1 artifact
+# reproduction; new code must use the Gaussian contract.
+# ---------------------------------------------------------------------------
+
+# Prototype packing contract: M = 64 sign bits = two uint32 words.
+QJL_M_BITS = 64
+
+
+@dataclass(frozen=True)
+class Int2QJLPayload:
+    """Self-contained INT2 + Gaussian-QJL sketch for one key vector.
+
+    Contents (per the ADR-010 packing contract):
+      - ``packed_int2``: the key quantized to symmetric INT2, 4 crumbs per
+        byte, via the pinned ``quantizer`` layout (Invariant 3).
+      - ``int2_params``: scale/zero-point of the INT2 base grid.
+      - ``signs``: M packed sign bits of the Gaussian projection of the
+        residual (two uint32 words at the default M=64).
+      - ``residual_norm``: FP16 ||k - k_hat||_2.
+    """
+
+    packed_int2: torch.Tensor  # (ceil(D/4),) uint8
+    int2_params: QuantParams
+    signs: torch.Tensor  # (ceil(M/32),) uint32
+    residual_norm: torch.Tensor  # () float16
+    dim: int
+    m_bits: int
+    scheme: Literal["sym", "asym"] = "sym"
+
+
+def generate_gaussian_proj(
+    dim: int, m_bits: int, seed: int, device: torch.device | None = None
+) -> torch.Tensor:
+    """Seeded i.i.d. standard-normal projection S of shape (m_bits, dim).
+
+    Gaussian entries are rotationally invariant: for any unit vector u the
+    projection S u is exactly N(0, I_m) in law. That is the property the
+    arcsine/half-normal proof needs and the reason this module refuses
+    Rademacher S for the unbiased contract (see
+    ``docs/HADAMARD_AND_QJL_MATH.md``).
+    """
+    generator = torch.Generator(device="cpu").manual_seed(seed)
+    proj = torch.randn(m_bits, dim, generator=generator, dtype=torch.float32)
+    return proj.to(device) if device is not None else proj
+
+
+def quantize_k_int2_qjl(
+    k: torch.Tensor,
+    cfg: QuantConfig | None = None,
+    gaussian_proj: torch.Tensor | None = None,
+    seed: int = 42,
+    m_bits: int = QJL_M_BITS,
+) -> Int2QJLPayload:
+    """Quantize one key vector to INT2 + Gaussian QJL residual sketch.
+
+    Contract: r = k - dequant(quantize(k, INT2, sym)) is sketched as
+    sign(S r) with S i.i.d. N(0,1) of shape (M, D), packed M bits per the
+    layout helper, plus the FP16 residual norm. The estimator
+    ``estimate_qjl_logits_ref`` is then UNBIASED for <q, k>:
+
+        E[ sqrt(pi/2)/M * ||r|| * <S q, sign(S r)> ] = <q, r>
+
+    Why Gaussian and not Rademacher: the identity relies on rotational
+    invariance -- for s ~ N(0, I_D) and fixed r, sign(<s, r>) * <s, q>
+    has expectation sqrt(2/pi) * <q, r> / ||r|| EXACTLY. A Rademacher row
+    is invariant only under coordinate permutations and sign flips, not
+    general rotations, so the half-normal factor does not apply and the
+    estimator acquires a direction-dependent bias.
+
+    Args:
+        k: Key vector of shape (D,), FP16/BF16/FP32.
+        cfg: Optional ``QuantConfig``; the prototype supports symmetric
+            INT2 only (``cfg`` accepted for interface compatibility).
+        gaussian_proj: Optional precomputed (M, D) Gaussian projection;
+            generated from ``seed`` when omitted.
+        seed: Projection seed (used only when ``gaussian_proj`` is None).
+        m_bits: Sketch width M; default 64 (two uint32 words).
+
+    Returns:
+        ``Int2QJLPayload`` holding packed INT2 crumbs, the base-grid
+        parameters, the packed signs and the FP16 residual norm.
+    """
+    from kv_quant.quantizer import dequantize_group, quantize_group
+
+    if cfg is not None and cfg.k_scheme != "sym":
+        raise ValueError("the INT2+QJL prototype supports only the symmetric scheme")
+    if k.dim() != 1:
+        raise ValueError(f"expected a single key vector of shape (D,), got {tuple(k.shape)}")
+    dim = k.shape[-1]
+    if gaussian_proj is None:
+        gaussian_proj = generate_gaussian_proj(dim, m_bits, seed)
+    if tuple(gaussian_proj.shape) != (m_bits, dim):
+        raise ValueError(f"gaussian_proj shape {tuple(gaussian_proj.shape)} != ({m_bits}, {dim})")
+
+    k32 = k.to(torch.float32)
+    packed, params = quantize_group(k32, 2, "sym")
+    k_hat = dequantize_group(packed, params, 2, "sym")
+    residual = k32 - k_hat.to(torch.float32)
+    norm = residual.norm()
+
+    projected = gaussian_proj.to(torch.float32) @ residual
+    sign_bits = (projected > 0).to(torch.uint8)
+    sign_bits = (
+        torch.nn.functional.pad(sign_bits, (0, m_bits - sign_bits.shape[0]), value=0)
+        if sign_bits.shape[0] < m_bits
+        else sign_bits
+    )
+    packed_signs = pack_qjl_signs(sign_bits)
+
+    return Int2QJLPayload(
+        packed_int2=packed,
+        int2_params=params,
+        signs=packed_signs,
+        residual_norm=norm.to(torch.float16),
+        dim=dim,
+        m_bits=sign_bits.shape[0],
+        scheme="sym",
+    )
+
+
+def estimate_qjl_logits_ref(
+    q: torch.Tensor,
+    qb_qjl: Int2QJLPayload,
+    gaussian_proj: torch.Tensor | None = None,
+    seed: int = 42,
+) -> float:
+    """Unbiased estimate of the attention logit <q, k> from the payload.
+
+    ``hat_ell = <q, k_hat> + sqrt(pi/2)/M * ||r|| * <S q, sign(S r)>`` where
+    the first term is the deterministic INT2 base and the second is the
+    Gaussian-QJL correction of the quantization residual. The estimator is
+    unbiased for ``<q, k>`` up to the FP16 rounding of the stored norm.
+
+    Args:
+        q: Query vector of shape (D,).
+        qb_qjl: Payload produced by ``quantize_k_int2_qjl``.
+        gaussian_proj: The SAME projection used at quantization time;
+            regenerated from ``seed`` when omitted.
+        seed: Projection seed (must match the quantization-side seed).
+
+    Returns:
+        The estimated logit as a Python float.
+    """
+    from kv_quant.quantizer import dequantize_group
+
+    if q.shape[-1] != qb_qjl.dim:
+        raise ValueError(f"q dim {q.shape[-1]} != payload dim {qb_qjl.dim}")
+    proj = gaussian_proj
+    if proj is None:
+        proj = generate_gaussian_proj(qb_qjl.dim, qb_qjl.m_bits, seed)
+
+    k_hat = dequantize_group(qb_qjl.packed_int2, qb_qjl.int2_params, 2, qb_qjl.scheme)
+    base = float((q.to(torch.float32) @ k_hat.to(torch.float32)).item())
+
+    signs = unpack_qjl_signs(qb_qjl.signs, qb_qjl.m_bits).to(torch.float32)
+    proj_q = proj.to(torch.float32) @ q.to(torch.float32)
+    correction = (
+        QJL_SCALE_FACTOR
+        / qb_qjl.m_bits
+        * float(qb_qjl.residual_norm.to(torch.float32).item())
+        * float((proj_q * signs).sum().item())
+    )
+    return base + correction
+
+
+def naive_int2_logit(q: torch.Tensor, qb_qjl: Int2QJLPayload) -> float:
+    """The naive INT2 logit <q, k_hat> WITHOUT the QJL residual correction."""
+    from kv_quant.quantizer import dequantize_group
+
+    k_hat = dequantize_group(qb_qjl.packed_int2, qb_qjl.int2_params, 2, qb_qjl.scheme)
+    return float((q.to(torch.float32) @ k_hat.to(torch.float32)).item())
