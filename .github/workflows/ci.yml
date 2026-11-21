@@ -40,3 +40,5 @@ jobs:
         run: uv run python scripts/check_claims.py
       - name: Run Figure Provenance Gate
         run: uv run python scripts/check_figure_provenance.py
+      - name: Run Interactive Explorer Drift Gate
+        run: uv run python scripts/check_explorer_drift.py

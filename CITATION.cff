@@ -7,11 +7,11 @@ type: software
 authors:
   - name: Amman
     email: amman@users.noreply.github.com
-version: 1.0.0
-date-released: "2026-11-18"
+version: 2.0.0
+date-released: "2026-11-21"
 license: Apache-2.0
 repository-code: "https://github.com/ammmanism/kv-quant"
-url: "https://github.com/ammmanism/kv-quant/releases/tag/v1.0.0"
+url: "https://github.com/ammmanism/kv-quant/releases/tag/v2.0.0"
 abstract: >-
   kv-quant is a research-grade implementation of quantized KV caching for LLM
   inference under provable correctness gates. Its v1.0.0 release quantifies

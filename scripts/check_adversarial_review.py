@@ -12,9 +12,16 @@ REVIEWS_DIR = Path("rfc/reviews")
 RESOLUTION_PATTERNS = [
     r"Fixed in `[a-f0-9]{7,40}`",
     r"Fixed in [a-f0-9]{7,40}",
-    r"Won't do — .+",
-    r"Question",
+    # A marker must be followed by an actual justification, not just the word.
+    r"(?i)^\s*(?:RESOLVED|Fixed)\b[\s\u2014:-]+\S",
+    r"(?i)^\s*Won't do\b[\s(\u2014:-]+\S",
+    # Legacy audits in this repo use these two documented outcome markers.
+    r"(?i)^\s*Investigated\b[\s\u2014:-]+\S",
+    r"(?i)user-approved[^\n]*resolution applied",
+    r"^Question\b",
 ]
+# A resolution that still says PENDING / not fixed / TBD is NOT resolved.
+PENDING_PATTERN = re.compile(r"(?i)\b(?:PENDING|not fixed|TBD|TODO)\b")
 
 
 def check_review_file(review_path: Path) -> tuple[bool, list[str]]:
@@ -39,7 +46,21 @@ def check_review_file(review_path: Path) -> tuple[bool, list[str]]:
             while j < len(lines):
                 res_match = re.match(r"^-\s*\*\*Resolution\*\*:\s*(.+)$", lines[j])
                 if res_match:
-                    resolution = res_match.group(1)
+                    # Resolutions may span multiple lines; join the whole
+                    # block so a marker on any line counts, not just the first.
+                    parts = [res_match.group(1)]
+                    k = j + 1
+                    while k < len(lines):
+                        if (
+                            re.match(r"^-\s*\[[ x]\]\s*\*\*Finding\*\*:", lines[k])
+                            or re.match(r"^-\s*\*\*Resolution\*\*:", lines[k])
+                            or re.match(r"^### ", lines[k])
+                            or not lines[k].strip()
+                        ):
+                            break
+                        parts.append(lines[k].strip())
+                        k += 1
+                    resolution = " ".join(parts)
                     break
                 # Stop if we hit another finding or section
                 if re.match(r"^-\s*\[[ x]\]\s*\*\*Finding\*\*:", lines[j]):
@@ -61,18 +82,24 @@ def check_review_file(review_path: Path) -> tuple[bool, list[str]]:
         if checked != "x":
             unresolved += 1
             errors.append(f"Unresolved finding: {finding}")
-        else:
-            # Verify resolution marker exists in resolution text
-            has_resolution = any(re.search(p, resolution) for p in RESOLUTION_PATTERNS)
-            if not has_resolution:
-                errors.append(
-                    f"Resolved finding missing resolution marker: {finding} | Resolution: {resolution}"
-                )
+        # Verify resolution marker exists in resolution text
+        elif PENDING_PATTERN.search(resolution):
+            errors.append(f"Resolution is still pending: {finding} | Resolution: {resolution}")
+        elif not any(re.search(p, resolution) for p in RESOLUTION_PATTERNS):
+            errors.append(
+                f"Resolved finding missing resolution marker: {finding} | Resolution: {resolution}"
+            )
 
     return unresolved == 0 and len(errors) == 0, errors
 
 
 def main() -> int:
+    # Review files contain typographic characters (≥, —, ✓); a Windows console
+    # defaulting to cp1252 raises UnicodeEncodeError mid-report, masking the
+    # actual verdict. Force UTF-8 output wherever the stream is reconfigurable.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
     # In CI, we'd determine the PR scope from the branch name or changed files
     # For now, check all review files
     if not REVIEWS_DIR.exists():

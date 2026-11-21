@@ -1,7 +1,7 @@
 # kv-quant Makefile
 # Targets for CI gates and development workflow
 
-.PHONY: verify verify-gpu test lint typecheck drift-check figure-check kernel-parity golden-compare no-claims-without-artifact charts clean help
+.PHONY: verify verify-gpu test lint typecheck drift-check figure-check kernel-parity golden-compare no-claims-without-artifact verify-explorer charts clean help
 
 # Default target
 help:
@@ -15,11 +15,12 @@ help:
 	@echo "  kernel-parity             - Run kernel parity tests"
 	@echo "  golden-compare            - Compare against golden baseline"
 	@echo "  no-claims-without-artifact - Check claims have CSV artifacts"
+	@echo "  verify-explorer           - Rebuild docs/explorer.html and byte-compare"
 	@echo "  charts                    - Render documentation charts"
 	@echo "  clean                     - Clean build artifacts"
 
 # Run all CI verification gates
-verify: test lint typecheck drift-check figure-check kernel-parity golden-compare no-claims-without-artifact
+verify: test lint typecheck drift-check figure-check kernel-parity golden-compare no-claims-without-artifact verify-explorer
 	@echo "✅ All verification gates passed"
 
 # GPU host: parity vs fused Triton kernel + GPU-marked tests (skipped on CPU CI)
@@ -55,6 +56,10 @@ kernel-parity:
 # Golden curve compare (Invariant 7)
 golden-compare:
 	uv run python scripts/check_golden_curve.py
+
+# Interactive explorer drift gate (docs/explorer.html == bench/data/*.csv)
+verify-explorer:
+	uv run python scripts/check_explorer_drift.py
 
 # Claims check (Invariant 1) + Adversarial review (Invariant 9)
 no-claims-without-artifact:
