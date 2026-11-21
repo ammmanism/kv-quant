@@ -14,6 +14,8 @@
 
 **Act II — cure the cliff (`v1.1.0` → `v1.2.0`).** We diagnosed the cause as post-RoPE channel outliers, applied an orthogonal block-diagonal Fast Walsh–Hadamard rotation that lifts INT4 SQNR by `7.349 dB` on a declared synthetic outlier fixture ([#p10_hadamard_rotation.csv:sqnr_delta_db]), then added a retrieval-head profiler that protects the top of the attention mass with K8V4 while leaving the remaining heads at K4V4 + Hadamard under a `4.5`-bit average budget ([#p11_head_sensitivity_schedule.csv:assigned_k_bits]). The 128K needle gap versus FP16 shrinks from `11.3%` (naive INT4-K) to `2.0%` (Hadamard) and `2.6%` (head-adaptive), the latter carrying the *lowest* log-probability drift of any quantized config ([#p11_head_rescue_curve.csv:acc_mean], [#p11_head_rescue_curve.csv:delta_logp]).
 
+**Act II, the agentic half (`v1.4.0` → `v1.5.0`).** Serving the rescued cache to a fleet: copy-on-write paged prefix sharing alone fits `3.73×` more concurrent 20-turn sessions than unshared FP16 (`41` vs `11` at 24 GiB / 32K), and quant + CoW reaches `14.64×` (`161` vs `11`; `1.60×` / `6.80×` at 64K) ([#p13_ragged_concurrency.csv:max_concurrent_sessions]). A 20-turn simulated ReAct harness then splits the two failure channels cleanly: **K-amnesia is a measured null** — routing flipped in `6` of `6,400` turn-records, all onto files read within `12,073` tokens, inside the 20K forgotten-span window ([#p14_agent_trajectory_drift.csv:k_amnesia_incident]) — while the **V channel is where sessions die**: INT2 values corrupt `15.94%` of payloads at 64K and collapse `78.1%` of runs into retry loops at turn `8`; at the same bit budget K8V4 resolves `71.9%` of sessions where K4V8 resolves `100%` ([#p14_agent_trajectory_drift.csv:v_schema_incident], [#p14_agent_trajectory_drift.csv:resolved]). **All of it is explorable interactively in [`docs/explorer.html`](docs/explorer.html) — zero dependencies, works offline, byte-gated against the committed CSVs.**
+
 ![Flagship Figure 0 — accuracy vs. context length with Wilson-95% CI bands; v1.0 INT4-K cliff against the v1.1 Hadamard and v1.2 head-adaptive rescue curves.](docs/figures/fig0_hero_cliff.png)
 
 **Figure 0 (above the fold).** Qwen/Qwen2.5-7B-Instruct, `7.61 B` parameters, `28` query heads / `4` KV heads (GQA `7:1`), `rotary_dim = 128`; replay-adapter sweep at `4K–128K`, 20 trials/cell, Wilson-95% bands (manifest of [#p6_v1_frontier_sweep.csv:acc_mean]; model geometry from `bench/data/p4_needle_depth_matrix.csv.manifest.json`). The rescue overlays are modeled projections, clearly distinguished by `config_id` ([#p10_hadamard_rescue.csv:acc_mean], [#p11_head_rescue_curve.csv:acc_mean]).
@@ -70,21 +72,21 @@ Rotation is applied to Q and K *before* cache append, so the fused kernel comput
 
 ---
 
-## 3. Deep-Dive Visual Evidence Gallery
+## 3. Deep-Dive Visual Evidence Gallery — Two Acts
 
-### 3.1 Where It Breaks: Position-Resolved Depth & Continuous ΔlogP Phase Sensor
+### 3.1 [Act I] Where It Breaks: Position-Resolved Depth & Continuous ΔlogP Phase Sensor
 
 ![Flagship Figure 1 — context × insertion-depth accuracy heatmap and continuous ΔlogP phase-decay curves.](docs/figures/fig1_needle_depth_heatmap.png)
 
 The cliff is a *position* phenomenon, not an average. The v1.0 post-RoPE sink-4 configuration falls to `0.8455` at `32K` and `0.8682` at `128K` while FP16 holds `0.9924` and `0.9788` ([#p4_needle_depth_matrix.csv:acc_mean]); the continuous log-probability sensor rises from `0.0610` nats (FP16, `32K`) to `0.6531` nats (post-RoPE INT4-K, `32K`) and `1.1766` nats at `128K` ([#p4_needle_depth_matrix.csv:delta_logp]). Pre-RoPE per-channel reordering does not fix it (`0.8212` at `32K`, `0.8106` at `128K`) ([#p4_needle_depth_matrix.csv:acc_mean]) — the remedy has to be orthogonal and cache-resident, not a transpose.
 
-### 3.2 The K/V Asymmetry Law: Routing Sensitivity vs. Payload Tolerance
+### 3.2 [Act I] The K/V Asymmetry Law: Routing Sensitivity vs. Payload Tolerance
 
 ![Flagship Figure 2 — 4×4 K-bits × V-bits contour surface showing K8V4 retention against K4V8 collapse.](docs/figures/fig2_kv_asymmetry_contour.png)
 
 Keys are routing logits: quantizing them to `4` bits collapses needle accuracy to `0.7715` at `32K` while values at `4` bits alongside `8`-bit keys hold `0.9596` ([#p6_v1_frontier_sweep.csv:acc_mean]). The same law holds in the ecological suite: at `128K` multi-hop, K8V4 scores `0.800` EM against `0.250` for naive K4V4 post-RoPE and `0.975` FP16 ([#p5_ecological_baseline.csv:em]); on long-sum fact retention at `64K`, K8V4 keeps `95.000%` versus `64.333%` ([#p5_ecological_baseline.csv:fact_retention_pct]). Physically, a small error in a key perturbs the *softmax argmax over the whole context*, while the same error in a value is averaged by the output projection. INT4 symmetry is not a neutral default — it is the wrong prior. **Scope trap:** the `0.7715` / `0.9596` figures here are v1-frontier sweep cells ([#p6_v1_frontier_sweep.csv:acc_mean]), not the p4 needle-spine cells quoted in §3.1 ([#p4_needle_depth_matrix.csv:acc_mean]); they are different evaluations of different configurations and must not be mixed.
 
-### 3.3 Hardware Truth: Fused Split-K GQA Roofline & `kv-cache-calculator` Cross-Validation
+### 3.3 [Act I] Hardware Truth: Fused Split-K GQA Roofline & `kv-cache-calculator` Cross-Validation
 
 ![Flagship Figure 3 — ncu-modeled DRAM traffic reduction and predicted-vs-measured VRAM regression.](docs/figures/fig3_roofline_and_vram.png)
 
@@ -98,17 +100,23 @@ For asymmetric `4`-bit groups of `64` that evaluates to `0.5625 B/elem` ([#p1_sq
 
 > No committed artifact contains a `4.5625 B/elem` naive comparison; the repo's `8.11×` is derived from the write-and-re-read traffic model above ([#p3_hbm_traffic_model.csv:hbm_traffic_reduction]), and this README refuses to invent one (see `rfc/reviews/readme-overhaul-review.md`).
 
-### 3.4 The v2.0 Cliff Rescue: Partial-RoPE Block-Diagonal Hadamard & Retrieval-Head Profiling
+### 3.4 [Act II] The v2.0 Cliff Rescue: Partial-RoPE Block-Diagonal Hadamard & Retrieval-Head Profiling
 
 ![Flagship Figure 4 — layer × KV-head distant-mass bimodality heatmap and the 4K–128K rescue comparison.](docs/figures/fig4_hadamard_and_head_rescue.png)
 
 Left panel: on a *declared synthetic* bimodal calibration set (`16` sequences × `8K`, `12 × 8` heads, rotary `64`), retrieval-biased heads score distant mass `0.596–1.000` against `0.557–0.594` for streaming heads; the `4.5`-bit compiler recovers all `20` ground-truth retrieval heads (`24` K8V4 assignments total, precision `20/24`) ([#p11_head_sensitivity_schedule.csv:distant_attn_mass], [#p11_head_sensitivity_schedule.csv:assigned_k_bits]). Right panel: the v1.0 cliff (`0.8455` at `32K`) becomes `0.9652` with block-diagonal Hadamard and `0.9652` with the head-adaptive schedule; at `128K`, FP16 `0.9788`, Hadamard `0.9591`, head-adaptive `0.9530` ([#p10_hadamard_rescue.csv:acc_mean], [#p11_head_rescue_curve.csv:acc_mean]). The mandated "within 0.3% of FP16 at 128K" was **not** reproduced: the head-adaptive residual is `2.6%`, bounded by the replay adapter's K8V4 baseline, which never reaches FP16 ([#p11_head_rescue_curve.csv:acc_mean]). All three rescue curves are *projections* from a replay adapter, not measured model forward passes ([#p11_head_rescue_curve.csv:projection]).
 
-### 3.5 The Multi-Turn Agent Cliff: K-Amnesia vs V-Syntax Drift
+### 3.5 [Act II] The Multi-Turn Agent Cliff: K-Amnesia vs V-Syntax Drift
 
 ![Flagship Figure 5 — key distortion against the retrieval margin, and 20-turn task resolution against KV memory, across five configurations at 32K and 64K.](docs/figures/fig5_agent_amnesia_vs_syntax.png)
 
 Left panel: key distortion sits below the first-percentile retrieval margin (`0.010`) for every configuration except K4V8 post-RoPE (`0.01485`), and K4V4 + Hadamard reaches only `0.00450` ([#p14_agent_trajectory_drift.csv:key_distortion], [#p14_agent_trajectory_drift.csv:retrieval_margin]). Routing flips in `6` of `6,400` turn-records, all onto files read within `12,073` tokens, so a re-read of a forgotten span never occurs: **K-amnesia is `0` everywhere** ([#p14_agent_trajectory_drift.csv:k_amnesia_incident], [#p14_agent_trajectory_drift.csv:context_tokens]). Right panel: the failure is on the value side. At `64K`, K8V2 corrupts `15.94%` of payloads and collapses `78.1%` of runs at turn `8`; K8V4 corrupts `1.87%` and collapses `9.4%`; K4V4 + Hadamard `0.16%` and `0`; FP16 and K4V8 post-RoPE both `0` ([#p14_agent_trajectory_drift.csv:v_schema_incident], [#p14_agent_trajectory_drift.csv:loop_collapse_turn]). Because K8V4 and K4V8 spend the same total bits, their divergence — `71.9%` vs `100%` of 20-turn sessions resolved at `64K` — isolates the channel: spending bits on V loses sessions, spending them on K does not ([#p14_agent_trajectory_drift.csv:resolved]). This is a **simulated** 20-turn ReAct harness whose failures follow measured `quantize_group`/`dequantize_group` error, not a model forward pass (ADR-012); the `32K` arm is a control where no revisit exceeds the forgotten-span window. See `docs/AGENT_FAILURE_MODES.md`.
+
+### 3.6 [Act I + Act II] The Interactive Explorer: Every Number, Live
+
+[`docs/explorer.html`](docs/explorer.html) — a single self-contained HTML file, zero dependencies, fully offline, compiled directly from the SHA256-verified `bench/data/*.csv` manifests (`19` artifacts). It cannot drift: `make verify-explorer` rebuilds the document in memory and byte-compares it against the committed file in CI.
+
+Four controls — context (`4K–128K`), task (Needle / Multi-Hop / LongSum / LongCode / 20-Turn Agent), phase (`v1.0 Baseline` vs `v2.0 Hadamard + Head-Adaptive`), and VRAM budget (`24/48/80 GB`) — drive three live views: the position-resolved cliff & ΔlogP explorer (per-config curves from [#p4_needle_depth_matrix.csv:acc_mean] and Wilson-banded rescue projections from [#p11_head_rescue_curve.csv:acc_mean]), the ragged-batch fleet cost calculator (CoW sharing diagrams and session counts from [#p13_ragged_concurrency.csv:max_concurrent_sessions]), and a one-click `QuantConfig` snippet that is compile-checked against the real dataclass in CI. Greyed-out context chips are honest absences — LongSum/LongCode were measured only at `8K–64K` ([#p5_ecological_baseline.csv:context_len]) and the agent/fleet rows only at `32K/64K` ([#p14_agent_trajectory_drift.csv:context_len]); nothing is interpolated. Every panel carries its epistemic badge — *measured*, *projected*, *modeled*, or *simulated* — so the rescue curves can never be mistaken for model forward passes.
 
 ---
 
@@ -165,9 +173,17 @@ uv sync --frozen
 # 1. Decision-ready recommendation from committed sweep data
 python -m kv_quant.advisor --context-len 128000 --task multihop --max-drop-pct 1.0 --vram-budget-gb 24
 
-# 2. Verify all 8 local gates (tests, ruff, mypy, drift, claims, figures, governance, bandit)
+# 2. Verify locally — two distinct 9-step gate sets:
+#    .\verify.ps1 (Windows): pytest, ruff check+format, mypy strict, layout
+#      drift, claims, figures, explorer drift, pr-governance, bandit
+#    make verify (POSIX): pytest, ruff, mypy, layout drift, figures,
+#      kernel-parity, golden-compare, claims+adversarial, explorer drift
 .\verify.ps1          # Windows
-make verify           # POSIX
+make verify           # POSIX (requires make)
+
+# 3. Explore every committed number interactively (zero dependencies, offline)
+start docs/explorer.html                      # or: xdg-open on POSIX
+uv run python scripts/build_interactive_explorer.py   # regenerate from bench/data/*.csv
 ```
 
 The advisor invocation above was executed against this tree: at `128K` it recommends `k_bits=8, v_bits=4, k_quant_stage='post_rope', sink_tokens=4, group_size=64` at a `0.93%` quality drop and `12.13×` ITL speedup ([#p6_v1_frontier_sweep.csv:acc_mean], [#p7_latency_ttft_itl.csv:itl_speedup_p50]).
@@ -213,30 +229,32 @@ kv-quant/
 │   ├── wrapper.py       # HF context manager, zero-reload config switch
 │   ├── vram.py          # byte calculator
 │   └── advisor.py       # CLI Pareto advisor
-├── scripts/             # CI gates + artifact generators (incl. fig0–fig5)
+├── scripts/             # CI gates + artifact generators (incl. fig0–fig5,
+│   └── (explorer)       #   build_interactive_explorer.py + drift gate)
 ├── tests/               # unit, hypothesis property, parity (gpu-marked)
 ├── bench/data/          # committed CSVs + SHA256 manifests (Invariant 1)
 ├── bench/baselines/     # frozen golden curve (Invariant 7)
 ├── docs/figures/        # 300-DPI PNGs + .png.meta.json (Invariant 2)
+├── docs/explorer.html   # zero-dependency interactive dashboard (§3.6)
 ├── rfc/reviews/         # adversarial audits (Invariant 9)
 ├── verify.ps1 / Makefile / pyproject.toml / opencode.json
 └── AGENTS.md / REPRODUCE.md / CITATION.cff / CHANGELOG.md
 ```
 
-**Whitepapers & governance:** [`docs/THE_TRADE.md`](docs/THE_TRADE.md) (scoped trade analysis), [`docs/KERNEL_NOTES.md`](docs/KERNEL_NOTES.md) (kernel derivation and hardware caveat), [`docs/DECISIONS.md`](docs/DECISIONS.md) (ADR-001 … ADR-009), [`REPRODUCE.md`](REPRODUCE.md) (checksum and float64 reproduction contract), [`rfc/reviews/`](rfc/reviews/) (all resolved audits), [`CHANGELOG.md`](CHANGELOG.md).
+**Whitepapers & governance:** [`docs/THE_TRADE.md`](docs/THE_TRADE.md) (scoped trade analysis), [`docs/KERNEL_NOTES.md`](docs/KERNEL_NOTES.md) (kernel derivation and hardware caveat), [`docs/DECISIONS.md`](docs/DECISIONS.md) (ADR-001 … ADR-012), [`REPRODUCE.md`](REPRODUCE.md) (checksum and float64 reproduction contract), [`docs/LAUNCH_POST.md`](docs/LAUNCH_POST.md) (v2.0.0 launch post), [`rfc/reviews/`](rfc/reviews/) (all resolved audits), [`CHANGELOG.md`](CHANGELOG.md).
 
 **Nine invariants:** (1) every numeric claim cites a committed CSV; (2) every figure records source hashes and ≥300 DPI; (3) `layout.py` owns all byte accounting; (4) quantizer/rotations are pure with explicit seeds; (5) FP16 sinks + CoW quantized pages + FP16 ring; (6) fused kernel parity within `1e-3` on GPU, CPU reference validated; (7) golden drift `>1.5%` accuracy / `>2.0%` VRAM fails CI ([#p6_v1_frontier_sweep.csv:acc_mean]); (8) three failed fixes revert to last green; (9) every PR carries a resolved adversarial review.
 
-**Citation** — from [`CITATION.cff`](CITATION.cff) (pins the v1.0.0 release; later milestones are listed in `CHANGELOG.md`):
+**Citation** — from [`CITATION.cff`](CITATION.cff) (pins the v2.0.0 release; earlier milestones are listed in `CHANGELOG.md`):
 
 ```bibtex
 @software{kv_quant_2026,
   title  = {kv-quant: KV-cache quantization quality cliffs, quantified},
   author = {Amman},
   year   = {2026},
-  version = {1.0.0},
+  version = {2.0.0},
   license = {Apache-2.0},
-  url    = {https://github.com/ammmanism/kv-quant/releases/tag/v1.0.0}
+  url    = {https://github.com/ammmanism/kv-quant/releases/tag/v2.0.0}
 }
 ```
 

@@ -1,6 +1,6 @@
 # THE_TRADE — What KV Quantization Actually Costs
 
-**An empirical MLSys trade-off study across `v1.0.0` → `v1.2.0`.**
+**An empirical MLSys trade-off study across `v1.0.0` → `v2.0.0`.**
 
 ## Executive Abstract & Model Provenance
 
@@ -213,9 +213,48 @@ projection label in its manifest ([#p10_hadamard_rescue.csv:projection_delta_db]
 
 ---
 
+## 5 The Agentic Turn — Fleet Cost and Failure Channels (v1.4.0 → v1.5.0)
+
+Two questions the context-length sweeps cannot answer: what does a quantized
+cache cost a *fleet* of concurrent agents, and which channel of a multi-turn
+agent breaks first.
+
+**Fleet economics.** With copy-on-write paged prefix hashing, a shared system
+prompt is stored once and deduplicated across sessions. Measured against the
+unshared FP16 baseline at 24 GiB / 32K context, CoW alone fits `3.73x` more
+concurrent sessions (`41` vs `11`), and quantized K4V4+Hadamard on top of CoW
+reaches `14.64x` (`161` vs `11`); at 64K the same contrasts are `1.60x` and
+`6.80x` ([#p13_ragged_concurrency.csv:max_concurrent_sessions]). Modeled
+fleet decode throughput scales with session count up to `8,894.7 tok/s` at
+that operating point ([#p13_ragged_concurrency.csv:modeled_decode_tok_s]).
+These are analytical byte-model numbers for the Qwen geometry, not GPU runs.
+
+**Failure channels.** A 20-turn simulated ReAct harness (2 contexts × 5
+configs × 32 seeds) separates routing from payload. Keys are *not* the
+constraint: routing flipped in `6` of `6,400` turn-records, each onto a file
+read within `12,073` tokens — inside the `20,000`-token forgotten-span
+window — so K-amnesia is `0` at every configuration
+([#p14_agent_trajectory_drift.csv:k_amnesia_incident]). Values are: at 64K,
+INT2 values corrupt `15.94%` of edit payloads and collapse `78.1%` of runs
+into retry loops at turn `8`; INT4 values on K8V4 corrupt `1.87%` /
+`9.4%` ([#p14_agent_trajectory_drift.csv:v_schema_incident],
+[#p14_agent_trajectory_drift.csv:loop_collapse_turn]). The cleanest
+contrast in the repo: K8V4 and K4V8 spend the same total bits, yet resolve
+`71.9%` vs `100%` of 20-turn sessions at 64K — **spending the marginal four
+bits on V loses sessions; spending them on K does not**
+([#p14_agent_trajectory_drift.csv:resolved]).
+
+**Decision rule.** For multi-turn agent serving, protect the V channel
+first: K4V8 or K8V4 over any V2/V4 asymmetry, CoW sharing on, and head-room
+for the retry-loop tail. The interactive fleet calculator in
+`docs/explorer.html` derives these session counts live from the committed
+CSV.
+
+---
+
 **Provenance footer.** All numeric claims resolve to CSV columns via
 `scripts/check_claims.py` (Invariant 1). CPU-only artifacts are labeled
 `modeled`/`ncu-modeled` at row level and in their manifests; figures carry
 SHA256-locked source hashes and ≥300 DPI (Invariant 2). The full decision record
-is [`DECISIONS.md`](DECISIONS.md) (ADR-001 … ADR-009); kernel-level derivations
+is [`DECISIONS.md`](DECISIONS.md) (ADR-001 … ADR-012); kernel-level derivations
 are [`KERNEL_NOTES.md`](KERNEL_NOTES.md); reproduction is `REPRODUCE.md`.

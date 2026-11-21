@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>kv-quant v2.0.0 — interactive KV-quantization explorer</title>
+<meta name="description" content="Zero-dependency interactive explorer over the
+SHA256-verified kv-quant benchmark CSVs: the late-context INT4-K cliff, the
+v2.0 Hadamard rescue, agent drift, and fleet concurrency.">
+<style>
+:root{--bg:#0a0e14;--panel:#10161f;--panel2:#151d29;--ink:#d9e2ec;--muted:#8494a7;
+--faint:#5b6b7d;--teal:#2dd4bf;--amber:#fbbf24;--red:#f87171;--blue:#60a5fa;
+--violet:#c084fc;--grid:#1d2836;--line0:#2dd4bf;--line1:#fbbf24;--line2:#60a5fa;
+--line3:#f87171;--line4:#c084fc;--line5:#a3e635}
+[data-theme="light"]{--bg:#f6f8fa;--panel:#ffffff;--panel2:#eef2f6;--ink:#1c2733;
+--muted:#54657a;--faint:#8195aa;--grid:#dfe6ee}
+*{box-sizing:border-box;margin:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 "Segoe UI",system-ui,
+-apple-system,sans-serif;min-height:100vh}
+a{color:var(--teal)}
+.wrap{max-width:1180px;margin:0 auto;padding:0 20px}
+header{position:sticky;top:0;z-index:9;background:linear-gradient(180deg,
+var(--panel) 0%,var(--panel2) 100%);border-bottom:1px solid var(--grid);
+padding:14px 0 10px;backdrop-filter:blur(4px)}
+.brand{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px}
+.brand h1{font-size:19px;letter-spacing:.4px;font-weight:650}
+.brand h1 .amp{color:var(--teal)}
+.prov{color:var(--muted);font-size:12.5px;display:flex;flex-wrap:wrap;gap:4px 14px;
+margin-top:3px;align-items:center}
+.prov b{color:var(--ink);font-weight:600}
+.sha{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--faint)}
+.spark{display:inline-flex;align-items:center;gap:8px}
+.spark svg{vertical-align:middle}
+/* ---- controls ---- */
+.controls{display:flex;flex-wrap:wrap;gap:14px 26px;padding:12px 0 4px}
+.ctl{display:flex;align-items:center;gap:8px}
+.ctl label{font-size:11px;text-transform:uppercase;letter-spacing:1.2px;
+color:var(--faint);font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{background:transparent;border:1px solid var(--grid);color:var(--muted);
+padding:4px 10px;border-radius:6px;font-size:12.5px;cursor:pointer;
+transition:border-color .15s,color .15s,background .15s;font-family:inherit}
+.chip:hover:not(:disabled){border-color:var(--teal);color:var(--ink)}
+.chip.on{background:var(--teal);border-color:var(--teal);color:#04211d;font-weight:600}
+.chip:disabled{opacity:.28;cursor:not-allowed;text-decoration:line-through}
+.seg{display:flex;border:1px solid var(--grid);border-radius:7px;overflow:hidden}
+.seg button{background:transparent;border:0;color:var(--muted);padding:5px 12px;
+font-size:12.5px;cursor:pointer;font-family:inherit;transition:background .15s}
+.seg button.on{background:var(--amber);color:#241a02;font-weight:650}
+.seg button:not(.on):hover{color:var(--ink)}
+/* ---- views ---- */
+main{padding:8px 0 30px}
+.view{background:var(--panel);border:1px solid var(--grid);border-radius:10px;
+padding:18px 20px;margin:16px 0;box-shadow:0 1px 0 rgba(0,0,0,.25)}
+.view>h2{font-size:15px;letter-spacing:.3px;margin-bottom:2px}
+.view>h2 .no{color:var(--teal);font-family:ui-monospace,Consolas,monospace}
+.view>.sub{color:var(--muted);font-size:12.5px;margin-bottom:12px}
+.panelgrid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:960px){.panelgrid{grid-template-columns:1fr}}
+.panel{background:var(--panel2);border:1px solid var(--grid);border-radius:8px;
+padding:12px 12px 6px;min-width:0}
+.panel h3{font-size:12px;color:var(--muted);text-transform:uppercase;
+letter-spacing:1px;font-weight:600;margin-bottom:8px}
+.panel h3 .src{float:right;text-transform:none;letter-spacing:0}
+figure{margin:0}
+figcaption{color:var(--faint);font-size:11.5px;padding:6px 2px 8px}
+svg text{font-family:ui-monospace,Consolas,monospace}
+svg .axis{stroke:var(--faint);stroke-width:1}
+svg .gridline{stroke:var(--grid);stroke-width:1}
+svg .ticktext{fill:var(--muted);font-size:10px}
+svg .ylab,.xlab{fill:var(--faint);font-size:10px}
+svg .l0{stroke:var(--line0)}svg .l1{stroke:var(--line1)}svg .l2{stroke:var(--line2)}
+svg .l3{stroke:var(--line3)}svg .l4{stroke:var(--line4)}svg .l5{stroke:var(--line5)}
+svg .cl{fill:none;stroke-width:2;stroke-linejoin:round}
+svg .band{opacity:.13}
+svg .bar{opacity:.9}
+svg .cross{stroke:var(--ink);stroke-width:.8;stroke-dasharray:3 3;opacity:.6}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11.5px;
+color:var(--muted);padding:2px 2px 8px}
+.legend .k{display:inline-flex;align-items:center;gap:5px}
+.legend .sw{width:14px;height:3px;border-radius:2px;display:inline-block}
+.empty{color:var(--faint);font-size:12px;padding:26px 10px;text-align:center;
+border:1px dashed var(--grid);border-radius:6px}
+.empty b{color:var(--muted)}
+/* ---- badges ---- */
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;
+border-radius:20px;padding:1.5px 9px;font-weight:600;letter-spacing:.4px;
+text-transform:uppercase;border:1px solid}
+.badge::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.b-measured{color:#34d399;border-color:#34d39955;background:#34d39911}
+.b-projected{color:#fbbf24;border-color:#fbbf2455;background:#fbbf2411}
+.b-replay{color:#c084fc;border-color:#c084fc55;background:#c084fc11}
+.b-modeled{color:#60a5fa;border-color:#60a5fa55;background:#60a5fa11}
+.b-simulated{color:#f472b6;border-color:#f472b655;background:#f472b611}
+.b-na{color:var(--faint);border-color:var(--grid);background:transparent}
+.badgerow{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px}
+/* ---- fleet view ---- */
+.fleetgrid{display:grid;grid-template-columns:1.15fr .85fr;gap:18px}
+@media(max-width:960px){.fleetgrid{grid-template-columns:1fr}}
+.stat{display:flex;flex-direction:column;gap:1px;padding:8px 12px;
+background:var(--panel2);border:1px solid var(--grid);border-radius:8px}
+.stat .v{font-size:22px;font-weight:700;font-family:ui-monospace,Consolas,monospace}
+.stat .k{font-size:10.5px;color:var(--faint);text-transform:uppercase;letter-spacing:1px}
+.stat .d{font-size:11px;color:var(--muted)}
+.statrow{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+@media(max-width:720px){.statrow{grid-template-columns:1fr}}
+/* ---- snippet view ---- */
+.snipwrap{position:relative}
+pre.snip{background:#05080d;border:1px solid var(--grid);border-radius:8px;
+padding:14px 16px;overflow-x:auto;font:12.5px/1.55 ui-monospace,Consolas,monospace;
+color:#cfe3ee;margin:0}
+[data-theme="light"] pre.snip{background:#0d1420;color:#cfe3ee}
+pre.snip .c{color:#5b6b7d}
+pre.snip .s{color:#a3e635}
+pre.snip .n{color:#fbbf24}
+.copy{position:absolute;top:8px;right:8px;background:var(--panel2);
+border:1px solid var(--grid);color:var(--muted);border-radius:6px;padding:4px 10px;
+font-size:11.5px;cursor:pointer;font-family:inherit}
+.copy:hover{color:var(--ink);border-color:var(--teal)}
+.warn{color:var(--amber);font-size:12px;border-left:3px solid var(--amber);
+padding:6px 10px;background:#fbbf240d;border-radius:0 6px 6px 0;margin-top:10px}
+.ok{color:#34d399;font-size:12px;margin-top:8px}
+/* ---- footer ---- */
+footer{border-top:1px solid var(--grid);margin-top:10px;padding:18px 0 40px;
+color:var(--muted);font-size:12.5px}
+footer h2{font-size:13px;color:var(--ink);margin-bottom:8px;letter-spacing:.4px}
+table.provtab{border-collapse:collapse;width:100%;font-size:11.5px}
+.provtab th,.provtab td{text-align:left;padding:4px 8px;border-bottom:1px solid var(--grid)}
+.provtab th{color:var(--faint);text-transform:uppercase;letter-spacing:1px;font-size:10px}
+.provtab td.mono{font-family:ui-monospace,Consolas,monospace;color:var(--faint)}
+.modebar{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 4px}
+.footnote{color:var(--faint);font-size:11.5px;margin-top:10px}
+.theme-toggle{position:absolute;top:14px;right:20px;background:transparent;
+border:1px solid var(--grid);color:var(--muted);border-radius:6px;padding:3px 10px;
+font-size:11.5px;cursor:pointer;font-family:inherit}
+.theme-toggle:hover{color:var(--ink);border-color:var(--teal)}
+@media print{header{position:static}.view{break-inside:avoid;box-shadow:none}
+.theme-toggle,.copy{display:none}body{background:#fff}}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+<button class="theme-toggle" id="theme" type="button">◐ theme</button>
+<div class="brand"><h1>kv<span class="amp">-</span>quant <span style="color:var(--muted);font-weight:400">explorer</span></h1>
+<span class="badge b-measured">v2.0.0</span></div>
+<div class="prov">
+<b>Qwen/Qwen2.5-7B-Instruct</b> · 7.61 B params · GQA <b>7:1</b> (28 Q / 4 KV heads) · rotary_dim <b>128</b>
+<span class="spark" id="spark"></span>
+</div>
+<div class="prov" style="margin-top:2px">
+<span><b>19</b> artifacts · <b>19</b> SHA256-verified against manifests ·
+latency/ITL rows modeled for <b>meta-llama/Llama-2-7b-hf</b> (p7) ·
+rebuild gate: <span class="sha">scripts/check_explorer_drift.py</span></span>
+</div>
+<div class="controls">
+<div class="ctl"><label>context</label><div class="chips" id="ctx-chips"></div></div>
+<div class="ctl"><label>task</label><div class="chips" id="task-chips"></div></div>
+<div class="ctl"><label>phase</label><div class="seg">
+<button type="button" id="seg-v1">v1.0 Baseline</button>
+<button type="button" id="seg-v2">v2.0 Hadamard + Head-Adaptive</button>
+</div></div>
+<div class="ctl"><label>vram budget</label><div class="chips" id="budget-chips"></div></div>
+</div>
+</div></header>
+<main class="wrap">
+<section class="view">
+<h2><span class="no">①</span> Position-Resolved Cliff &amp; ΔlogP Explorer</h2>
+<div class="sub">Where in the context the quantization cliff bites, per configuration.
+Greyed contexts are honest absences — nothing is interpolated.</div>
+<div class="panelgrid">
+<div class="panel"><h3 id="h3-a"></h3><div class="badgerow" id="badges-a"></div>
+<div class="legend" id="leg-a"></div><figure id="fig-a"></figure></div>
+<div class="panel"><h3 id="h3-b"></h3><div class="badgerow" id="badges-b"></div>
+<div class="legend" id="leg-b"></div><figure id="fig-b"></figure></div>
+</div>
+</section>
+<section class="view">
+<h2><span class="no">②</span> Ragged-Batch Concurrent Agent Session &amp; Fleet Cost Calculator</h2>
+<div class="sub">How many simultaneous 20-turn sessions fit a GPU budget with
+copy-on-write paged prefix sharing (p13, modeled byte model).</div>
+<div class="badgerow" id="badges-c"></div>
+<div class="statrow" id="fleet-stats"></div>
+<div class="fleetgrid">
+<div class="panel"><h3 id="h3-c"></h3><div class="legend" id="leg-c"></div><figure id="fig-c"></figure></div>
+</div>
+</section>
+<section class="view">
+<h2><span class="no">③</span> One-Click QuantConfig Snippet</h2>
+<div class="sub">A cited, compile-checked configuration for the current selection —
+with the AVOID patterns the CSVs actually measured.</div>
+<div class="badgerow" id="badges-d"></div>
+<div class="snipwrap">
+<button class="copy" id="copy" type="button">copy</button>
+<pre class="snip" id="snip"></pre>
+</div>
+<div class="warn" id="snip-warn" style="display:none"></div>
+<div class="ok" id="snip-ok"></div>
+</section>
+</main>
+<footer><div class="wrap">
+<h2>Evidence provenance — every number resolves to a committed, SHA256-verified CSV</h2>
+<div class="modebar">
+<span class="badge b-measured">measured (CPU objects)</span>
+<span class="badge b-replay">replay-baseline (modeled quality)</span>
+<span class="badge b-projected">projected (synthetic fixture)</span>
+<span class="badge b-modeled">modeled (analytical)</span>
+<span class="badge b-simulated">simulated harness</span>
+</div>
+<table class="provtab"><tr><th>artifact</th><th>rows</th><th>epistemic mode</th><th>model / fixture</th><th>sha256</th></tr>
+<tr><td class="mono">arch_compat_matrix.csv</td><td>5</td><td>reference</td><td class="mono">—</td><td class="mono">02147490c75c…</td></tr>
+<tr><td class="mono">p10_hadamard_rescue.csv</td><td>15</td><td>projected</td><td class="mono">synthetic/micro_kv_2k (no model weights)</td><td class="mono">3a026d63cfe2…</td></tr>
+<tr><td class="mono">p10_hadamard_rotation.csv</td><td>10</td><td>synthetic</td><td class="mono">synthetic/micro_kv_2k (no model weights)</td><td class="mono">281b0c48cc74…</td></tr>
+<tr><td class="mono">p11_head_rescue_curve.csv</td><td>20</td><td>projected</td><td class="mono">synthetic/bimodal-calibration (no model weights)</td><td class="mono">55691ae8a8e7…</td></tr>
+<tr><td class="mono">p11_head_sensitivity_schedule.csv</td><td>128</td><td>synthetic</td><td class="mono">synthetic/bimodal-calibration (no model weights)</td><td class="mono">2a712857a218…</td></tr>
+<tr><td class="mono">p12_qjl_mse_ablation.csv</td><td>18</td><td>synthetic</td><td class="mono">synthetic/micro_kv_2k head-pairs (no model weights)</td><td class="mono">7045425f3e83…</td></tr>
+<tr><td class="mono">p13_ragged_concurrency.csv</td><td>24</td><td>modeled</td><td class="mono">Qwen/Qwen2.5-7B-Instruct</td><td class="mono">5ee7c8bdda4a…</td></tr>
+<tr><td class="mono">p14_agent_trajectory_drift.csv</td><td>6,400</td><td>simulated</td><td class="mono">Qwen/Qwen2.5-7B-Instruct</td><td class="mono">ebae3e9f9295…</td></tr>
+<tr><td class="mono">p1_hadamard_qjl_ablation.csv</td><td>16</td><td>synthetic</td><td class="mono">—</td><td class="mono">b4bd68b16236…</td></tr>
+<tr><td class="mono">p1_sqnr_error_bounds.csv</td><td>90</td><td>synthetic</td><td class="mono">—</td><td class="mono">592705348739…</td></tr>
+<tr><td class="mono">p2_cow_prefix_memory.csv</td><td>5</td><td>measured (CPU)</td><td class="mono">—</td><td class="mono">5ccc508421e8…</td></tr>
+<tr><td class="mono">p2_head_sensitivity_map.csv</td><td>96</td><td>synthetic</td><td class="mono">—</td><td class="mono">960d56927732…</td></tr>
+<tr><td class="mono">p3_hbm_traffic_model.csv</td><td>12</td><td>analytical</td><td class="mono">—</td><td class="mono">14e956e30399…</td></tr>
+<tr><td class="mono">p4_needle_depth_matrix.csv</td><td>1,155</td><td>replay-baseline</td><td class="mono">Qwen/Qwen2.5-7B-Instruct</td><td class="mono">a097db2aba5b…</td></tr>
+<tr><td class="mono">p5_ecological_baseline.csv</td><td>96</td><td>replay-baseline</td><td class="mono">—</td><td class="mono">43ddf6413aae…</td></tr>
+<tr><td class="mono">p6_v1_frontier_sweep.csv</td><td>2,596</td><td>replay-baseline</td><td class="mono">Qwen/Qwen2.5-7B-Instruct</td><td class="mono">ca9859cacd52…</td></tr>
+<tr><td class="mono">p7_latency_ttft_itl.csv</td><td>20</td><td>modeled</td><td class="mono">meta-llama/Llama-2-7b-hf</td><td class="mono">9c6ef7d9613e…</td></tr>
+<tr><td class="mono">p7_ncu_bandwidth.csv</td><td>40</td><td>ncu-modeled</td><td class="mono">meta-llama/Llama-2-7b-hf</td><td class="mono">840c5c75e32f…</td></tr>
+<tr><td class="mono">p7_vram_crossval.csv</td><td>20</td><td>measured (CPU)</td><td class="mono">Qwen/Qwen2.5-7B-Instruct</td><td class="mono">f0c88381ea7b…</td></tr></table>
+<p class="footnote">Modeled rows: p7 latency/ITL use analytical byte equations for
+Llama-2-7b-hf; p13 fleet sessions use the paged-cache byte model for the Qwen geometry.
+Projected rows: p10/p11 v2.0 rescue curves come from declared synthetic fixtures via a
+replay adapter — not model forward passes. Simulated rows: p14 drives a 20-turn ReAct
+harness with measured quantizer error; no LLM ran on the host (ADR-012).
+This file is regenerated and byte-compared by <code>make verify-explorer</code>;
+it can never silently drift from <code>bench/data/*.csv</code>.</p>
+</div></footer>
+<script>window.KQ_DATA = {"agent":{"fp16":{"32768":{"amnesia":0.0,"collapsed":0.0,"resolved":1.0,"v_schema":0.0},"65536":{"amnesia":0.0,"collapsed":0.0,"resolved":1.0,"v_schema":0.0}},"k4v4_hadamard":{"32768":{"amnesia":0.0,"collapsed":0.03125,"resolved":0.96875,"v_schema":0.001563},"65536":{"amnesia":0.0,"collapsed":0.0,"resolved":0.96875,"v_schema":0.001563}},"k4v8_postrope":{"32768":{"amnesia":0.0,"collapsed":0.0,"resolved":1.0,"v_schema":0.0},"65536":{"amnesia":0.0,"collapsed":0.0,"resolved":1.0,"v_schema":0.0}},"k8v2_asym":{"32768":{"amnesia":0.0,"collapsed":0.78125,"resolved":0.0625,"v_schema":0.13125},"65536":{"amnesia":0.0,"collapsed":0.78125,"resolved":0.0,"v_schema":0.159375}},"k8v4":{"32768":{"amnesia":0.0,"collapsed":0.09375,"resolved":0.78125,"v_schema":0.010937},"65536":{"amnesia":0.0,"collapsed":0.09375,"resolved":0.71875,"v_schema":0.01875}}},"anchor_sha":"ebae3e9f92950440d05f87d26b5a9ad03d4dbd27dfbd2e8d0809b805ab2c8465","avail":{"agent":[32768,65536],"depth":{"longcode":[8192,32768,65536],"longsum":[8192,32768,65536],"multihop":[4096,16384,32768,65536,131072],"needle":[4096,16384,32768,65536,131072]},"fleet":[32768,65536],"frontier":{"longcode":[8192,32768,65536],"longsum":[8192,32768,65536],"multihop":[4096,16384,32768,65536,131072],"needle":[4096,16384,32768,65536,131072]}},"depth":{"longcode":{"fp16":{"8192":[[0.0,1.0]],"32768":[[0.0,1.0]],"65536":[[0.0,1.0]]},"k4v4_postrope_sink4":{"8192":[[0.0,0.95]],"32768":[[0.0,0.8]],"65536":[[0.0,0.55]]},"k4v8":{"8192":[[0.0,0.95]],"32768":[[0.0,0.9]],"65536":[[0.0,0.7]]},"k8v4":{"8192":[[0.0,1.0]],"32768":[[0.0,0.85]],"65536":[[0.0,0.85]]},"k8v8":{"8192":[[0.0,1.0]],"32768":[[0.0,0.9]],"65536":[[0.0,0.65]]}},"longsum":{"fp16":{"8192":[[100.0,99.666667]],"32768":[[100.0,99.333333]],"65536":[[100.0,99.333333]]},"k4v4_postrope_sink4":{"8192":[[100.0,89.333333]],"32768":[[100.0,79.0]],"65536":[[100.0,64.333333]]},"k4v8":{"8192":[[100.0,96.333333]],"32768":[[100.0,94.333333]],"65536":[[100.0,90.333333]]},"k8v4":{"8192":[[100.0,95.333333]],"32768":[[100.0,94.0]],"65536":[[100.0,95.0]]},"k8v8":{"8192":[[100.0,96.0]],"32768":[[100.0,96.333333]],"65536":[[100.0,97.333333]]}},"multihop":{"fp16":{"4096":[[85.0,0.95]],"16384":[[85.0,0.95]],"32768":[[85.0,0.95]],"65536":[[85.0,1.0]],"131072":[[85.0,0.975]]},"k4v4_postrope_sink4":{"4096":[[85.0,0.825]],"16384":[[85.0,0.775]],"32768":[[85.0,0.525]],"65536":[[85.0,0.4]],"131072":[[85.0,0.25]]},"k4v8":{"4096":[[85.0,0.8]],"16384":[[85.0,0.8]],"32768":[[85.0,0.75]],"65536":[[85.0,0.7]],"131072":[[85.0,0.7]]},"k8v4":{"4096":[[85.0,0.925]],"16384":[[85.0,0.975]],"32768":[[85.0,0.875]],"65536":[[85.0,0.875]],"131072":[[85.0,0.8]]},"k8v8":{"4096":[[85.0,0.825]],"16384":[[85.0,0.875]],"32768":[[85.0,0.9]],"65536":[[85.0,0.925]],"131072":[[85.0,1.0]]}},"needle":{"fp16":{"4096":[[0.0,0.933333],[10.0,1.0],[20.0,1.0],[30.0,0.95],[40.0,0.933333],[50.0,1.0],[60.0,0.983333],[70.0,1.0],[80.0,1.0],[90.0,1.0],[100.0,0.983333]],"16384":[[0.0,0.983333],[10.0,1.0],[20.0,0.983333],[30.0,0.983333],[40.0,0.966667],[50.0,0.95],[60.0,1.0],[70.0,0.983333],[80.0,0.983333],[90.0,1.0],[100.0,0.983333]],"32768":[[0.0,1.0],[10.0,1.0],[20.0,1.0],[30.0,1.0],[40.0,1.0],[50.0,0.983333],[60.0,1.0],[70.0,0.966667],[80.0,0.983333],[90.0,0.983333],[100.0,1.0]],"65536":[[0.0,0.966667],[10.0,0.983333],[20.0,1.0],[30.0,0.983333],[40.0,1.0],[50.0,0.983333],[60.0,0.983333],[70.0,1.0],[80.0,0.983333],[90.0,0.966667],[100.0,1.0]],"131072":[[0.0,0.95],[10.0,0.983333],[20.0,1.0],[30.0,0.983333],[40.0,1.0],[50.0,0.983333],[60.0,0.933333],[70.0,0.966667],[80.0,1.0],[90.0,0.983333],[100.0,0.983333]]},"k4v4_postrope_nosink":{"4096":[[0.0,0.95],[10.0,0.933333],[20.0,0.983333],[30.0,0.933333],[40.0,0.933333],[50.0,0.933333],[60.0,1.0],[70.0,0.95],[80.0,0.916667],[90.0,0.983333],[100.0,0.983333]],"16384":[[0.0,0.983333],[10.0,0.933333],[20.0,0.95],[30.0,0.95],[40.0,0.966667],[50.0,0.95],[60.0,0.916667],[70.0,0.95],[80.0,0.983333],[90.0,0.95],[100.0,0.916667]],"32768":[[0.0,0.966667],[10.0,0.95],[20.0,0.95],[30.0,0.95],[40.0,0.933333],[50.0,0.966667],[60.0,0.916667],[70.0,0.283333],[80.0,0.366667],[90.0,0.283333],[100.0,0.25]],"65536":[[0.0,0.9],[10.0,0.9],[20.0,0.95],[30.0,0.916667],[40.0,0.95],[50.0,0.95],[60.0,0.983333],[70.0,0.283333],[80.0,0.316667],[90.0,0.266667],[100.0,0.466667]],"131072":[[0.0,0.95],[10.0,0.95],[20.0,0.966667],[30.0,0.95],[40.0,0.95],[50.0,0.916667],[60.0,0.95],[70.0,0.333333],[80.0,0.283333],[90.0,0.266667],[100.0,0.25]]},"k4v4_postrope_sink4":{"4096":[[0.0,0.983333],[10.0,0.933333],[20.0,0.883333],[30.0,0.933333],[40.0,0.966667],[50.0,0.95],[60.0,0.966667],[70.0,0.933333],[80.0,0.933333],[90.0,0.933333],[100.0,0.916667]],"16384":[[0.0,0.95],[10.0,0.933333],[20.0,0.95],[30.0,0.966667],[40.0,0.95],[50.0,0.95],[60.0,0.966667],[70.0,0.933333],[80.0,0.966667],[90.0,0.916667],[100.0,0.966667]],"32768":[[0.0,0.916667],[10.0,0.983333],[20.0,0.933333],[30.0,0.933333],[40.0,0.95],[50.0,0.933333],[60.0,0.933333],[70.0,0.583333],[80.0,0.633333],[90.0,0.75],[100.0,0.75]],"65536":[[0.0,0.933333],[10.0,0.933333],[20.0,0.95],[30.0,0.95],[40.0,0.983333],[50.0,0.983333],[60.0,0.966667],[70.0,0.716667],[80.0,0.683333],[90.0,0.75],[100.0,0.75]],"131072":[[0.0,0.95],[10.0,0.966667],[20.0,0.9],[30.0,0.933333],[40.0,0.966667],[50.0,0.983333],[60.0,0.916667],[70.0,0.783333],[80.0,0.7],[90.0,0.716667],[100.0,0.733333]]},"k4v8":{"4096":[[0.0,0.966667],[10.0,0.933333],[20.0,0.933333],[30.0,0.95],[40.0,0.966667],[50.0,0.95],[60.0,0.966667],[70.0,0.933333],[80.0,1.0],[90.0,0.983333],[100.0,0.966667]],"16384":[[0.0,0.983333],[10.0,0.933333],[20.0,0.95],[30.0,0.966667],[40.0,1.0],[50.0,0.95],[60.0,0.983333],[70.0,0.983333],[80.0,1.0],[90.0,0.983333],[100.0,0.983333]],"32768":[[0.0,0.983333],[10.0,0.983333],[20.0,0.983333],[30.0,1.0],[40.0,0.95],[50.0,0.966667],[60.0,0.933333],[70.0,0.95],[80.0,0.95],[90.0,0.966667],[100.0,0.983333]],"65536":[[0.0,0.95],[10.0,0.983333],[20.0,0.983333],[30.0,0.966667],[40.0,0.933333],[50.0,0.983333],[60.0,0.966667],[70.0,0.883333],[80.0,0.933333],[90.0,0.933333],[100.0,0.933333]],"131072":[[0.0,0.95],[10.0,0.9],[20.0,0.983333],[30.0,1.0],[40.0,0.933333],[50.0,0.933333],[60.0,0.933333],[70.0,0.933333],[80.0,0.95],[90.0,0.966667],[100.0,0.95]]},"k8v4":{"4096":[[0.0,0.95],[10.0,0.933333],[20.0,1.0],[30.0,0.966667],[40.0,0.9],[50.0,0.95],[60.0,0.966667],[70.0,0.983333],[80.0,0.966667],[90.0,0.983333],[100.0,0.966667]],"16384":[[0.0,1.0],[10.0,0.983333],[20.0,0.983333],[30.0,0.966667],[40.0,0.983333],[50.0,1.0],[60.0,1.0],[70.0,0.983333],[80.0,0.983333],[90.0,0.966667],[100.0,0.983333]],"32768":[[0.0,0.95],[10.0,0.983333],[20.0,0.966667],[30.0,0.983333],[40.0,1.0],[50.0,0.983333],[60.0,1.0],[70.0,0.983333],[80.0,0.916667],[90.0,0.95],[100.0,0.95]],"65536":[[0.0,0.916667],[10.0,0.983333],[20.0,0.966667],[30.0,0.95],[40.0,0.983333],[50.0,0.966667],[60.0,1.0],[70.0,0.966667],[80.0,0.916667],[90.0,1.0],[100.0,0.983333]],"131072":[[0.0,0.95],[10.0,0.916667],[20.0,0.95],[30.0,0.916667],[40.0,0.866667],[50.0,0.983333],[60.0,0.966667],[70.0,0.933333],[80.0,0.983333],[90.0,0.966667],[100.0,0.983333]]},"k8v8":{"4096":[[0.0,0.966667],[10.0,0.95],[20.0,0.983333],[30.0,1.0],[40.0,0.983333],[50.0,0.966667],[60.0,0.966667],[70.0,0.966667],[80.0,0.95],[90.0,0.95],[100.0,0.966667]],"16384":[[0.0,0.966667],[10.0,0.966667],[20.0,0.966667],[30.0,0.966667],[40.0,0.966667],[50.0,0.95],[60.0,0.983333],[70.0,0.95],[80.0,0.95],[90.0,0.983333],[100.0,0.966667]],"32768":[[0.0,0.95],[10.0,0.95],[20.0,0.933333],[30.0,0.933333],[40.0,0.966667],[50.0,0.95],[60.0,0.983333],[70.0,0.983333],[80.0,1.0],[90.0,0.95],[100.0,1.0]],"65536":[[0.0,0.95],[10.0,0.933333],[20.0,1.0],[30.0,0.966667],[40.0,0.95],[50.0,0.95],[60.0,0.916667],[70.0,1.0],[80.0,0.966667],[90.0,0.966667],[100.0,0.95]],"131072":[[0.0,0.983333],[10.0,0.95],[20.0,0.916667],[30.0,0.933333],[40.0,0.933333],[50.0,0.916667],[60.0,0.933333],[70.0,0.866667],[80.0,0.933333],[90.0,0.983333],[100.0,0.933333]]}}},"fleet":[{"budget":24,"bytes_per_token":66560.0,"config":"fp16","cow":false,"ctx":32768,"private_b":2181300224,"sessions":11,"shared_b":0,"tok_s":696.7,"used_b":23994302464},{"budget":24,"bytes_per_token":66560.0,"config":"fp16_cow","cow":true,"ctx":32768,"private_b":583860224,"sessions":41,"shared_b":1597440000,"tok_s":2440.1,"used_b":25535709184},{"budget":24,"bytes_per_token":17920.0,"config":"k4v4_hadamard_cow","cow":true,"ctx":32768,"private_b":157384704,"sessions":161,"shared_b":430080000,"tok_s":8894.7,"used_b":25769017344},{"budget":24,"bytes_per_token":26112.0,"config":"k8v4_cow","cow":true,"ctx":32768,"private_b":229212160,"sessions":109,"shared_b":626688000,"tok_s":6234.0,"used_b":25610813440},{"budget":24,"bytes_per_token":66560.0,"config":"fp16","cow":false,"ctx":65536,"private_b":4362338304,"sessions":5,"shared_b":0,"tok_s":352.4,"used_b":21811691520},{"budget":24,"bytes_per_token":66560.0,"config":"fp16_cow","cow":true,"ctx":65536,"private_b":2764898304,"sessions":8,"shared_b":1597440000,"tok_s":518.5,"used_b":23716626432},{"budget":24,"bytes_per_token":17920.0,"config":"k4v4_hadamard_cow","cow":true,"ctx":65536,"private_b":744587264,"sessions":34,"shared_b":430080000,"tok_s":1963.0,"used_b":25746046976},{"budget":24,"bytes_per_token":26112.0,"config":"k8v4_cow","cow":true,"ctx":65536,"private_b":1084850176,"sessions":23,"shared_b":626688000,"tok_s":1356.5,"used_b":25578242048},{"budget":48,"bytes_per_token":66560.0,"config":"fp16","cow":false,"ctx":32768,"private_b":2181300224,"sessions":23,"shared_b":0,"tok_s":696.7,"used_b":50169905152},{"budget":48,"bytes_per_token":66560.0,"config":"fp16_cow","cow":true,"ctx":32768,"private_b":583860224,"sessions":85,"shared_b":1597440000,"tok_s":2521.8,"used_b":51225559040},{"budget":48,"bytes_per_token":17920.0,"config":"k4v4_hadamard_cow","cow":true,"ctx":32768,"private_b":157384704,"sessions":324,"shared_b":430080000,"tok_s":8970.1,"used_b":51422724096},{"budget":48,"bytes_per_token":26112.0,"config":"k8v4_cow","cow":true,"ctx":32768,"private_b":229212160,"sessions":222,"shared_b":626688000,"tok_s":6312.6,"used_b":51511787520},{"budget":48,"bytes_per_token":66560.0,"config":"fp16","cow":false,"ctx":65536,"private_b":4362338304,"sessions":11,"shared_b":0,"tok_s":352.4,"used_b":47985721344},{"budget":48,"bytes_per_token":66560.0,"config":"fp16_cow","cow":true,"ctx":65536,"private_b":2764898304,"sessions":18,"shared_b":1597440000,"tok_s":538.7,"used_b":51365609472},{"budget":48,"bytes_per_token":17920.0,"config":"k4v4_hadamard_cow","cow":true,"ctx":65536,"private_b":744587264,"sessions":68,"shared_b":430080000,"tok_s":1979.5,"used_b":51062013952},{"budget":48,"bytes_per_token":26112.0,"config":"k8v4_cow","cow":true,"ctx":65536,"private_b":1084850176,"sessions":46,"shared_b":626688000,"tok_s":1373.3,"used_b":50529796096},{"budget":80,"bytes_per_token":66560.0,"config":"fp16","cow":false,"ctx":32768,"private_b":2181300224,"sessions":39,"shared_b":0,"tok_s":696.7,"used_b":85070708736},{"budget":80,"bytes_per_token":66560.0,"config":"fp16_cow","cow":true,"ctx":32768,"private_b":583860224,"sessions":144,"shared_b":1597440000,"tok_s":2554.4,"used_b":85673312256},{"budget":80,"bytes_per_token":17920.0,"config":"k4v4_hadamard_cow","cow":true,"ctx":32768,"private_b":157384704,"sessions":543,"shared_b":430080000,"tok_s":9000.4,"used_b":85889974272},{"budget":80,"bytes_per_token":26112.0,"config":"k8v4_cow","cow":true,"ctx":32768,"private_b":229212160,"sessions":372,"shared_b":626688000,"tok_s":6343.7,"used_b":85893611520},{"budget":80,"bytes_per_token":66560.0,"config":"fp16","cow":false,"ctx":65536,"private_b":4362338304,"sessions":19,"shared_b":0,"tok_s":352.4,"used_b":82884427776},{"budget":80,"bytes_per_token":66560.0,"config":"fp16_cow","cow":true,"ctx":65536,"private_b":2764898304,"sessions":30,"shared_b":1597440000,"tok_s":545.5,"used_b":84544389120},{"budget":80,"bytes_per_token":17920.0,"config":"k4v4_hadamard_cow","cow":true,"ctx":65536,"private_b":744587264,"sessions":114,"shared_b":430080000,"tok_s":1986.2,"used_b":85313028096},{"budget":80,"bytes_per_token":26112.0,"config":"k8v4_cow","cow":true,"ctx":65536,"private_b":1084850176,"sessions":78,"shared_b":626688000,"tok_s":1380.3,"used_b":85245001728}],"frontier":{"longcode":{"fp16":{"8192":{"acc":0.967582,"dlogp":0.034537,"vram_mib":3603.41},"32768":{"acc":0.960445,"dlogp":0.047313,"vram_mib":14367.34},"65536":{"acc":0.963756,"dlogp":0.057511,"vram_mib":28719.17}},"k4v4_postrope":{"8192":{"acc":0.773695,"dlogp":0.05503,"vram_mib":3603.41},"32768":{"acc":0.770025,"dlogp":0.027596,"vram_mib":14367.34},"65536":{"acc":0.768129,"dlogp":0.051461,"vram_mib":28719.17}},"k4v8":{"8192":{"acc":0.775054,"dlogp":0.042261,"vram_mib":3603.41},"32768":{"acc":0.775092,"dlogp":0.066138,"vram_mib":14367.34},"65536":{"acc":0.772125,"dlogp":0.022953,"vram_mib":28719.17}},"k8v4":{"8192":{"acc":0.962701,"dlogp":0.067223,"vram_mib":3603.41},"32768":{"acc":0.959709,"dlogp":0.021265,"vram_mib":14367.34},"65536":{"acc":0.958457,"dlogp":0.075788,"vram_mib":28719.17}},"k8v8":{"8192":{"acc":0.960747,"dlogp":0.047006,"vram_mib":3603.41},"32768":{"acc":0.9619,"dlogp":0.051211,"vram_mib":14367.34},"65536":{"acc":0.965847,"dlogp":0.065277,"vram_mib":28719.17}}},"longsum":{"fp16":{"8192":{"acc":0.96407,"dlogp":0.042669,"vram_mib":3603.41},"32768":{"acc":0.966636,"dlogp":0.055312,"vram_mib":14367.34},"65536":{"acc":0.964667,"dlogp":0.027694,"vram_mib":28719.17}},"k4v4_postrope":{"8192":{"acc":0.774082,"dlogp":0.029791,"vram_mib":3603.41},"32768":{"acc":0.773307,"dlogp":0.033087,"vram_mib":14367.34},"65536":{"acc":0.771071,"dlogp":0.056568,"vram_mib":28719.17}},"k4v8":{"8192":{"acc":0.774313,"dlogp":0.046395,"vram_mib":3603.41},"32768":{"acc":0.77527,"dlogp":0.009598,"vram_mib":14367.34},"65536":{"acc":0.771677,"dlogp":0.050737,"vram_mib":28719.17}},"k8v4":{"8192":{"acc":0.964974,"dlogp":0.042609,"vram_mib":3603.41},"32768":{"acc":0.962454,"dlogp":0.050119,"vram_mib":14367.34},"65536":{"acc":0.958514,"dlogp":0.058682,"vram_mib":28719.17}},"k8v8":{"8192":{"acc":0.960432,"dlogp":0.0861,"vram_mib":3603.41},"32768":{"acc":0.966464,"dlogp":0.073438,"vram_mib":14367.34},"65536":{"acc":0.966273,"dlogp":0.010206,"vram_mib":28719.17}}},"multihop":{"k16v16_post_rope_s4":{"4096":{"acc":0.965056,"dlogp":0.05939,"vram_mib":1809.4},"16384":{"acc":0.963778,"dlogp":0.03921,"vram_mib":7191.3},"32768":{"acc":0.963881,"dlogp":0.059283,"vram_mib":14367.34},"65536":{"acc":0.962946,"dlogp":0.033046,"vram_mib":28719.17},"131072":{"acc":0.963027,"dlogp":0.071601,"vram_mib":57422.82}},"k4v4_post_rope_s0":{"4096":{"acc":0.761996,"dlogp":0.06091,"vram_mib":1809.4},"16384":{"acc":0.761579,"dlogp":0.046224,"vram_mib":7191.3},"32768":{"acc":0.760303,"dlogp":0.064543,"vram_mib":14367.34},"65536":{"acc":0.759885,"dlogp":0.062304,"vram_mib":28719.17},"131072":{"acc":0.757201,"dlogp":0.059719,"vram_mib":57422.82}},"k4v4_post_rope_s4":{"4096":{"acc":0.772934,"dlogp":0.058123,"vram_mib":1809.4},"16384":{"acc":0.77245,"dlogp":0.040712,"vram_mib":7191.3},"32768":{"acc":0.772937,"dlogp":0.052774,"vram_mib":14367.34},"65536":{"acc":0.769911,"dlogp":0.05422,"vram_mib":28719.17},"131072":{"acc":0.767332,"dlogp":0.056762,"vram_mib":57422.82}},"k4v8_post_rope_s4":{"4096":{"acc":0.774781,"dlogp":0.0541,"vram_mib":1809.4},"16384":{"acc":0.773759,"dlogp":0.048901,"vram_mib":7191.3},"32768":{"acc":0.772493,"dlogp":0.060594,"vram_mib":14367.34},"65536":{"acc":0.773354,"dlogp":0.061747,"vram_mib":28719.17},"131072":{"acc":0.7715,"dlogp":0.039043,"vram_mib":57422.82}},"k8v4_post_rope_s4":{"4096":{"acc":0.959983,"dlogp":0.065364,"vram_mib":1809.4},"16384":{"acc":0.963305,"dlogp":0.061464,"vram_mib":7191.3},"32768":{"acc":0.961844,"dlogp":0.057766,"vram_mib":14367.34},"65536":{"acc":0.959374,"dlogp":0.058208,"vram_mib":28719.17},"131072":{"acc":0.958851,"dlogp":0.061399,"vram_mib":57422.82}},"k8v8_post_rope_s4":{"4096":{"acc":0.963858,"dlogp":0.057346,"vram_mib":1809.4},"16384":{"acc":0.962975,"dlogp":0.035386,"vram_mib":7191.3},"32768":{"acc":0.962734,"dlogp":0.047902,"vram_mib":14367.34},"65536":{"acc":0.963897,"dlogp":0.052537,"vram_mib":28719.17},"131072":{"acc":0.962584,"dlogp":0.042194,"vram_mib":57422.82}}},"needle":{"k16v16_post_rope_s4":{"4096":{"acc":0.964532,"dlogp":0.053064,"vram_mib":1809.4},"16384":{"acc":0.964657,"dlogp":0.039051,"vram_mib":7191.3},"32768":{"acc":0.965609,"dlogp":0.055491,"vram_mib":14367.34},"65536":{"acc":0.963209,"dlogp":0.059469,"vram_mib":28719.17},"131072":{"acc":0.961307,"dlogp":0.058945,"vram_mib":57422.82}},"k4v4_post_rope_s0":{"4096":{"acc":0.76106,"dlogp":0.0472,"vram_mib":1809.4},"16384":{"acc":0.762955,"dlogp":0.049232,"vram_mib":7191.3},"32768":{"acc":0.761776,"dlogp":0.047311,"vram_mib":14367.34},"65536":{"acc":0.761977,"dlogp":0.037033,"vram_mib":28719.17},"131072":{"acc":0.761522,"dlogp":0.062647,"vram_mib":57422.82}},"k4v4_post_rope_s4":{"4096":{"acc":0.773847,"dlogp":0.05083,"vram_mib":1809.4},"16384":{"acc":0.771522,"dlogp":0.087726,"vram_mib":7191.3},"32768":{"acc":0.771528,"dlogp":0.055287,"vram_mib":14367.34},"65536":{"acc":0.771556,"dlogp":0.056244,"vram_mib":28719.17},"131072":{"acc":0.770258,"dlogp":0.041713,"vram_mib":57422.82}},"k4v8_post_rope_s4":{"4096":{"acc":0.775522,"dlogp":0.032143,"vram_mib":1809.4},"16384":{"acc":0.774122,"dlogp":0.060451,"vram_mib":7191.3},"32768":{"acc":0.774838,"dlogp":0.070526,"vram_mib":14367.34},"65536":{"acc":0.773806,"dlogp":0.071266,"vram_mib":28719.17},"131072":{"acc":0.771647,"dlogp":0.033728,"vram_mib":57422.82}},"k8v4_post_rope_s4":{"4096":{"acc":0.962355,"dlogp":0.051134,"vram_mib":1809.4},"16384":{"acc":0.961842,"dlogp":0.053145,"vram_mib":7191.3},"32768":{"acc":0.959638,"dlogp":0.051743,"vram_mib":14367.34},"65536":{"acc":0.961098,"dlogp":0.05639,"vram_mib":28719.17},"131072":{"acc":0.959932,"dlogp":0.040857,"vram_mib":57422.82}},"k8v8_post_rope_s4":{"4096":{"acc":0.964971,"dlogp":0.044285,"vram_mib":1809.4},"16384":{"acc":0.963681,"dlogp":0.062693,"vram_mib":7191.3},"32768":{"acc":0.964124,"dlogp":0.037452,"vram_mib":14367.34},"65536":{"acc":0.962372,"dlogp":0.056481,"vram_mib":28719.17},"131072":{"acc":0.961994,"dlogp":0.049436,"vram_mib":57422.82}}}},"meta":{"artifacts":[{"file":"arch_compat_matrix.csv","mode":"reference","model_id":"","rows":5,"sha256":"02147490c75ce16d4e9d006125c30b4452c28316e1fda06b37567f4322211e76"},{"file":"p10_hadamard_rescue.csv","mode":"projected","model_id":"synthetic/micro_kv_2k (no model weights)","rows":15,"sha256":"3a026d63cfe2e3cae3d9dff691ca5bfbdaed9cf8773cc524663e8a05523a5fcf"},{"file":"p10_hadamard_rotation.csv","mode":"synthetic","model_id":"synthetic/micro_kv_2k (no model weights)","rows":10,"sha256":"281b0c48cc74fac08bb128593d21f499aaa5202ed50a6d5c21068b0f14876944"},{"file":"p11_head_rescue_curve.csv","mode":"projected","model_id":"synthetic/bimodal-calibration (no model weights)","rows":20,"sha256":"55691ae8a8e73bf4272185612b371caf821631424fa0548ab979168c8a2f24ef"},{"file":"p11_head_sensitivity_schedule.csv","mode":"synthetic","model_id":"synthetic/bimodal-calibration (no model weights)","rows":128,"sha256":"2a712857a218d7cf8c2a71372eedf004f5a86f1668e35864bc23ec58c84422ce"},{"file":"p12_qjl_mse_ablation.csv","mode":"synthetic","model_id":"synthetic/micro_kv_2k head-pairs (no model weights)","rows":18,"sha256":"7045425f3e8336f1af477af590bd47e3cfa578bf081b7bfa2e1f57462d7fd74d"},{"file":"p13_ragged_concurrency.csv","mode":"modeled","model_id":"Qwen/Qwen2.5-7B-Instruct","rows":24,"sha256":"5ee7c8bdda4ae8116141041e8ecdf8da95e6ba59ebd9b841bdab07676a654cb3"},{"file":"p14_agent_trajectory_drift.csv","mode":"simulated","model_id":"Qwen/Qwen2.5-7B-Instruct","rows":6400,"sha256":"ebae3e9f92950440d05f87d26b5a9ad03d4dbd27dfbd2e8d0809b805ab2c8465"},{"file":"p1_hadamard_qjl_ablation.csv","mode":"synthetic","model_id":"","rows":16,"sha256":"b4bd68b16236209e40bffeed736d84cef2f3f813844ede06e10c6a99018fb8f3"},{"file":"p1_sqnr_error_bounds.csv","mode":"synthetic","model_id":"","rows":90,"sha256":"59270534873944181ee0bf655a63518df3e15277638983a1e8c69a3610000742"},{"file":"p2_cow_prefix_memory.csv","mode":"measured (CPU)","model_id":"","rows":5,"sha256":"5ccc508421e8a2c35e132a8a7a02bf002b5c3cf327aad6ba5f16f30336c5c346"},{"file":"p2_head_sensitivity_map.csv","mode":"synthetic","model_id":"","rows":96,"sha256":"960d56927732cbc7d02299035c605187d255274354d5416957c4a3eda4052e4c"},{"file":"p3_hbm_traffic_model.csv","mode":"analytical","model_id":"","rows":12,"sha256":"14e956e30399cba66ce8a765be1c74cb867c477ee6b62deb88115d063204c478"},{"file":"p4_needle_depth_matrix.csv","mode":"replay-baseline","model_id":"Qwen/Qwen2.5-7B-Instruct","rows":1155,"sha256":"a097db2aba5bbde6613d6957393e8bc421a458de39a099061e039310465d14a7"},{"file":"p5_ecological_baseline.csv","mode":"replay-baseline","model_id":"","rows":96,"sha256":"43ddf6413aaea83b6ba28c1aec7f01089e46480d2c5c7f9db1cf641c65a60166"},{"file":"p6_v1_frontier_sweep.csv","mode":"replay-baseline","model_id":"Qwen/Qwen2.5-7B-Instruct","rows":2596,"sha256":"ca9859cacd52797c75c6473fe3dc190d6ec3e755abd27a8143704dd091d5f1f7"},{"file":"p7_latency_ttft_itl.csv","mode":"modeled","model_id":"meta-llama/Llama-2-7b-hf","rows":20,"sha256":"9c6ef7d9613e7c1f19c35e50c76c568528137ee5f60a89c62609dc57c3ae27a2"},{"file":"p7_ncu_bandwidth.csv","mode":"ncu-modeled","model_id":"meta-llama/Llama-2-7b-hf","rows":40,"sha256":"840c5c75e32fbe6cd1fffca054a99947a06280ce2ac9097ed4250e09382480fe"},{"file":"p7_vram_crossval.csv","mode":"measured (CPU)","model_id":"Qwen/Qwen2.5-7B-Instruct","rows":20,"sha256":"f0c88381ea7b83fefbb89f93ad6759c66227ca21ea0d40aea2b63fca298d4953"}],"gqa":"7:1","kv_heads":4,"latency_model":"meta-llama/Llama-2-7b-hf","model_id":"Qwen/Qwen2.5-7B-Instruct","param_count_b":7.61,"q_heads":28,"rotary_dim":128,"verified":19},"rescue":{"fp16":{"4096":{"acc":0.9803,"dlogp":0.0668,"hi":0.9885,"lo":0.9666,"source":"p11"},"16384":{"acc":0.9833,"dlogp":0.0617,"hi":0.9907,"lo":0.9704,"source":"p11"},"32768":{"acc":0.9924,"dlogp":0.061,"hi":0.9968,"lo":0.9824,"source":"p11"},"65536":{"acc":0.9864,"dlogp":0.0618,"hi":0.9928,"lo":0.9743,"source":"p11"},"131072":{"acc":0.9788,"dlogp":0.0613,"hi":0.9873,"lo":0.9647,"source":"p11"}},"head_adaptive_4p5_hadamard":{"4096":{"acc":0.9667,"dlogp":0.1358,"hi":0.9779,"lo":0.95,"source":"p11"},"16384":{"acc":0.9758,"dlogp":0.1457,"hi":0.985,"lo":0.961,"source":"p11"},"32768":{"acc":0.9652,"dlogp":0.1618,"hi":0.9767,"lo":0.9483,"source":"p11"},"65536":{"acc":0.9636,"dlogp":0.1972,"hi":0.9754,"lo":0.9465,"source":"p11"},"131072":{"acc":0.953,"dlogp":0.2614,"hi":0.9667,"lo":0.9341,"source":"p11"}},"k4v4_hadamard":{"4096":{"acc":0.9712,"dlogp":0.1464,"hi":0.9815,"lo":0.9555,"source":"p11"},"16384":{"acc":0.9758,"dlogp":0.1561,"hi":0.985,"lo":0.961,"source":"p11"},"32768":{"acc":0.9652,"dlogp":0.17,"hi":0.9767,"lo":0.9483,"source":"p11"},"65536":{"acc":0.9652,"dlogp":0.2036,"hi":0.9767,"lo":0.9483,"source":"p11"},"131072":{"acc":0.9576,"dlogp":0.2667,"hi":0.9705,"lo":0.9394,"source":"p11"}},"k4v4_hadamard_projected":{"4096":{"acc":0.9727,"dlogp":0.1464,"hi":0.9827,"lo":0.9573,"source":"p10"},"16384":{"acc":0.9773,"dlogp":0.1561,"hi":0.9862,"lo":0.9628,"source":"p10"},"32768":{"acc":0.9652,"dlogp":0.17,"hi":0.9767,"lo":0.9483,"source":"p10"},"65536":{"acc":0.9652,"dlogp":0.2036,"hi":0.9767,"lo":0.9483,"source":"p10"},"131072":{"acc":0.9591,"dlogp":0.2667,"hi":0.9717,"lo":0.9411,"source":"p10"}},"k4v4_postrope":{"4096":{"acc":0.9394,"dlogp":0.4992,"hi":0.9552,"lo":0.9185,"source":"p11"},"16384":{"acc":0.95,"dlogp":0.5745,"hi":0.9642,"lo":0.9306,"source":"p11"},"32768":{"acc":0.8455,"dlogp":0.6531,"hi":0.871,"lo":0.8159,"source":"p11"},"65536":{"acc":0.8727,"dlogp":0.8319,"hi":0.896,"lo":0.8451,"source":"p11"},"131072":{"acc":0.8682,"dlogp":1.1766,"hi":0.8919,"lo":0.8402,"source":"p11"}}},"task_metric":{"longcode":{"key":"ast_exact_match","label":"AST exact match"},"longsum":{"key":"fact_retention_pct","label":"fact retention"},"multihop":{"key":"acc_mean","label":"multi-hop accuracy"},"needle":{"key":"acc_mean","label":"needle accuracy"}}};</script>
+<script>
+(function(){
+"use strict";
+var D = window.KQ_DATA;
+function $(id){return document.getElementById(id);}
+var S = {ctx:32768, task:"needle", phase:"v1", budget:24};
+var CTXS = [[4096,"4K"],[8192,"8K"],[16384,"16K"],[32768,"32K"],[65536,"64K"],[131072,"128K"]];
+var TASKS = [["needle","Needle"],["multihop","Multi-Hop"],["longsum","LongSum"],["longcode","LongCode"],["agent","20-Turn Agent"]];
+var BUDGETS = [24,48,80];
+var MODE_BADGE = {measured:"b-measured","measured (cpu)":"b-measured","replay-baseline":"b-replay",
+projected:"b-projected",modeled:"b-modeled","ncu-modeled":"b-modeled",simulated:"b-simulated",
+synthetic:"b-projected",analytical:"b-modeled",reference:"b-na"};
+function badge(mode,label){
+  var cls = MODE_BADGE[String(mode).toLowerCase()] || "b-na";
+  return '<span class="badge '+cls+'">'+(label||mode)+'</span>';
+}
+function el(name,attrs,parent){
+  var n = document.createElementNS("http://www.w3.org/2000/svg",name);
+  for(var k in attrs){n.setAttribute(k,attrs[k]);}
+  if(parent){parent.appendChild(n);}
+  return n;
+}
+function lin(d0,d1,r0,r1){return function(v){return r0+(d1?((v-d0)/(d1-d0)*(r1-r0)):r0);};}
+function fmtCtx(c){for(var i=0;i<CTXS.length;i++){if(CTXS[i][0]===c){return CTXS[i][1];}}return (c/1024)+"K";}
+function fmtMiB(b){return (b/1048576).toFixed(1);}
+function fmtGiB(b){return (b/1073741824).toFixed(2);}
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;");}
+function linePath(pts){
+  var d="";for(var i=0;i<pts.length;i++){d+=(i?"L":"M")+pts[i][0].toFixed(1)+" "+pts[i][1].toFixed(1);}
+  return d;
+}
+function bandPath(top,bot){
+  if(!top.length||top.length!==bot.length){return "";}
+  var d="M"+top[0][0].toFixed(1)+" "+top[0][1].toFixed(1);
+  for(var i=1;i<top.length;i++){d+="L"+top[i][0].toFixed(1)+" "+top[i][1].toFixed(1);}
+  for(var j=bot.length-1;j>=0;j--){d+="L"+bot[j][0].toFixed(1)+" "+bot[j][1].toFixed(1);}
+  return d+"Z";
+}
+function clearNode(n){while(n.firstChild){n.removeChild(n.firstChild);}}
+function emptyState(fig,msg){
+  clearNode(fig);
+  var d=document.createElement("div");d.className="empty";d.innerHTML=msg;
+  fig.appendChild(d);
+}
+/* ---------- availability ---------- */
+function ctxEnabled(ctx){
+  if(S.task==="agent"){return D.avail.agent.indexOf(ctx)>=0;}
+  var depth=(D.avail.depth[S.task]||[]),frontier=(D.avail.frontier[S.task]||[]);
+  if(S.phase==="v2"&&S.task==="needle"){return true;}
+  return depth.indexOf(ctx)>=0||frontier.indexOf(ctx)>=0;
+}
+function noteFor(fig,kind){
+  var src={depth:"p4 / p5",frontier:"p6",rescue:"p10 / p11",fleet:"p13",agent:"p14"}[kind];
+  return '<span class="src">bench/data — '+src+'</span>';
+}
+/* ---------- controls ---------- */
+function buildControls(){
+  var ctxBox=$("ctx-chips"),taskBox=$("task-chips"),budgetBox=$("budget-chips");
+  CTXS.forEach(function(c){
+    var b=document.createElement("button");b.className="chip";b.textContent=c[1];
+    b.id="ctx-"+c[0];b.onclick=function(){S.ctx=c[0];refresh();};ctxBox.appendChild(b);
+  });
+  TASKS.forEach(function(t){
+    var b=document.createElement("button");b.className="chip";b.textContent=t[1];
+    b.id="task-"+t[0];b.onclick=function(){S.task=t[0];S.ctx=pickCtx();refresh();};taskBox.appendChild(b);
+  });
+  BUDGETS.forEach(function(g){
+    var b=document.createElement("button");b.className="chip";b.textContent=g+" GB";
+    b.id="bud-"+g;b.onclick=function(){S.budget=g;refresh();};budgetBox.appendChild(b);
+  });
+  $("seg-v1").onclick=function(){S.phase="v1";refresh();};
+  $("seg-v2").onclick=function(){S.phase="v2";refresh();};
+  $("theme").onclick=function(){
+    var root=document.documentElement;
+    var cur=root.getAttribute("data-theme")==="light"?"dark":"light";
+    root.setAttribute("data-theme",cur);try{localStorage.setItem("kq-theme",cur);}catch(e){}
+  };
+  try{var saved=localStorage.getItem("kq-theme");if(saved){document.documentElement.setAttribute("data-theme",saved);}}catch(e){}
+}
+function pickCtx(){
+  var avail=CTXS.filter(function(c){return ctxEnabled(c[0]);}).map(function(c){return c[0];});
+  if(avail.indexOf(S.ctx)>=0){return S.ctx;}
+  return avail.length?avail[Math.max(0,avail.indexOf(65536))>=0?avail.indexOf(65536):avail.length-1]:32768;
+}
+function syncControls(){
+  CTXS.forEach(function(c){
+    var b=$("ctx-"+c[0]);if(!b){return;}
+    var on=ctxEnabled(c[0]);
+    b.disabled=!on;b.classList.toggle("on",on&&S.ctx===c[0]);
+    if(on&&S.ctx===c[0]){b.title="";}
+  });
+  TASKS.forEach(function(t){$("task-"+t[0]).classList.toggle("on",S.task===t[0]);});
+  BUDGETS.forEach(function(g){$("bud-"+g).classList.toggle("on",S.budget===g);});
+  $("seg-v1").classList.toggle("on",S.phase==="v1");
+  $("seg-v2").classList.toggle("on",S.phase==="v2");
+}
+/* ---------- dispatch ---------- */
+function refresh(){
+  syncControls();
+  renderHeaderSpark();
+  renderPanelA();
+  renderPanelB();
+  renderFleet();
+  renderSnippet();
+}
+function renderHeaderSpark(){
+  var host=$("spark");clearNode(host);
+  var w=210,h=30,svg=el("svg",{width:w,height:h,viewBox:"0 0 "+w+" "+h},host);
+  // p6 calls its FP16 baseline k16v16_post_rope_s4 (not "fp16").
+  var fp=D.frontier.needle["k16v16_post_rope_s4"]||{},k44=D.frontier.needle["k4v4_post_rope_s4"]||{};
+  var ctxs=[4096,16384,32768,65536,131072].filter(function(c){return fp[c];});
+  if(!ctxs.length){return;}
+  var x=lin(ctxs[0],ctxs[ctxs.length-1],4,w-8),y=lin(0.70,1.0,h-6,6);
+  function draw(key,cls){
+    var pts=ctxs.map(function(c){return [x(c),y(fp[c].acc)];});
+    el("path",{d:linePath(pts),class:"cl "+cls,fill:"none",strokeWidth:2},svg);
+  }
+  draw(0,"l0");el("circle",{cx:x(ctxs[ctxs.length-1]),cy:y(fp[ctxs[ctxs.length-1]].acc),r:2.4,class:"l0"},svg);
+  var pts2=ctxs.map(function(c){return k44[c]?k44[c].acc:null;}).filter(function(v){return v!==null;});
+  if(pts2.length===ctxs.length){
+    var d=ctxs.map(function(c){return [x(c),y(k44[c].acc)];});
+    el("path",{d:linePath(d),class:"cl l3",fill:"none",strokeWidth:2},svg);
+  }
+  el("text",{x:4,y:h-1,class:"ticktext"},svg).textContent="FP16";
+  el("text",{x:w-46,y:h-1,class:"ticktext",fill:"#f87171"},svg).textContent="INT4-K";
+}
+
+var depthTip = null;  // single reusable hover tooltip (no node leak on re-render)
+/* ================= Panel A: position-resolved ================= */
+function renderPanelA(){
+  var fig=$("fig-a"),leg=$("leg-a"),h3=$("h3-a"),badges=$("badges-a");
+  clearNode(leg);
+  if(S.task==="agent"){h3.innerHTML="K-amnesia vs V-schema corruption per config "
+    +noteFor(fig,"agent");badges.innerHTML=badge("simulated","simulated harness");
+    renderAgentBars(fig,leg);return;}
+  var curves=D.depth[S.task]||{};
+  h3.innerHTML=TASKS.filter(function(t){return t[0]===S.task;})[0][1]
+    +" — "+D.task_metric[S.task].label+" vs insertion depth @ "+fmtCtx(S.ctx)
+    +noteFor(fig,"depth");
+  var has=S.phase==="v2";
+  badges.innerHTML=badge("replay-baseline",has?"v1.0 baseline (reference)":"v1.0 baseline")
+    +(has?"<span style='color:var(--faint);font-size:11px'> — no depth-resolved v2.0 rows exist; rescue curves are context-resolved (Panel B)</span>":"");
+  var configs=Object.keys(curves).sort();
+  var ctxSeries=configs.filter(function(c){return curves[c][S.ctx];});
+  if(!ctxSeries.length){
+    emptyState(fig,"<b>not measured</b> — no depth-resolved rows for this task at "
+      +fmtCtx(S.ctx)+" (greyed contexts are honest absences, not zeros)");
+    return;
+  }
+  var maxPts=0;ctxSeries.forEach(function(c){maxPts=Math.max(maxPts,curves[c][S.ctx].length);});
+  if(maxPts<2){
+    emptyState(fig,"<b>not position-resolved</b> — p5 ecological rows for this task "
+      +"measure a single insertion depth only, so no depth curve exists. "
+      +"Panel B shows the context-resolved p6 frontier instead.");
+    return;
+  }
+  var metricKey=D.task_metric[S.task].key;
+  var vals=[];ctxSeries.forEach(function(c){curves[c][S.ctx].forEach(function(p){vals.push(p[1]);});});
+  var lo=Math.min.apply(null,vals),hi=Math.max.apply(null,vals);
+  var pad=(hi-lo)*0.08||0.02;lo=Math.max(0,lo-pad);hi=Math.min(1,hi+pad);
+  if(D.task_metric[S.task].key==="fact_retention_pct"){hi=100;}
+  drawDepthChart(fig,leg,ctxSeries,curves,lo,hi,metricKey);
+}
+function drawDepthChart(fig,leg,configs,curves,lo,hi,metricKey){
+  clearNode(fig);
+  var W=560,H=300,L=46,R=10,T=8,B=30;
+  var svg=el("svg",{viewBox:"0 0 "+W+" "+H,width:"100%"},fig);
+  var x=lin(0,100,L,W-R),y=lin(lo,hi,H-B,T);
+  for(var i=0;i<=4;i++){
+    var yv=lo+(hi-lo)*i/4,yy=y(yv);
+    el("line",{x1:L,x2:W-R,y1:yy,y2:yy,class:"gridline"},svg);
+    el("text",{x:L-6,y:yy+3,class:"ticktext","text-anchor":"end"},svg)
+      .textContent=yv.toFixed(2);
+  }
+  [0,25,50,75,100].forEach(function(d){
+    el("text",{x:x(d),y:H-8,class:"ticktext","text-anchor":"middle"},svg)
+      .textContent=d+"%";
+  });
+  el("text",{x:L-34,y:T+6,class:"xlab"},svg).textContent=metricKey==="fact_retention_pct"?"%":"acc";
+  el("text",{x:(L+W-R)/2,y:H-2,class:"xlab","text-anchor":"middle"},svg).textContent="insertion depth (% of context)";
+  var cross=el("line",{y1:T,y2:H-B,class:"cross",visibility:"hidden"},svg);
+  var tip=depthTip;
+  if(!tip){
+    tip=document.createElement("div");
+    tip.style.cssText="position:fixed;pointer-events:none;background:var(--panel);border:1px solid var(--grid);padding:6px 9px;font-size:11px;border-radius:6px;display:none;z-index:99;color:var(--ink)";
+    document.body.appendChild(tip);depthTip=tip;
+  }
+  configs.forEach(function(cfg,ci){
+    var pts=curves[cfg][S.ctx].map(function(p){return [x(p[0]),y(p[1])];});
+    el("path",{d:linePath(pts),class:"cl l"+(ci%6)},svg);
+    var sw=document.createElement("span");sw.className="k";
+    sw.innerHTML='<span class="sw" style="background:var(--line'+(ci%6)+')"></span>'+esc(cfg);
+    leg.appendChild(sw);
+  });
+  svg.addEventListener("mousemove",function(ev){
+    var rect=svg.getBoundingClientRect();
+    var px=(ev.clientX-rect.left)*(W/rect.width);
+    if(px<L||px>W-R){cross.setAttribute("visibility","hidden");tip.style.display="none";return;}
+    var depth=(px-L)/(W-R-L)*100;
+    cross.setAttribute("x1",px);cross.setAttribute("x2",px);cross.setAttribute("visibility","visible");
+    var rows=configs.map(function(cfg,ci){
+      var best=curves[cfg][S.ctx].reduce(function(a,p){return Math.abs(p[0]-depth)<Math.abs(a[0]-depth)?p:a;});
+      return '<div><span class="sw" style="background:var(--line'+(ci%6)+');display:inline-block;width:12px;height:3px;margin-right:5px"></span>'
+        +esc(cfg)+" <b>"+best[1].toFixed(3)+"</b></div>";
+    }).join("");
+    tip.innerHTML="<b>depth "+depth.toFixed(0)+"%</b>"+rows;
+    tip.style.display="block";tip.style.left=(ev.clientX+14)+"px";tip.style.top=(ev.clientY+10)+"px";
+  });
+  svg.addEventListener("mouseleave",function(){cross.setAttribute("visibility","hidden");tip.style.display="none";});
+}
+/* ================= Panel B: context-resolved ================= */
+function renderPanelB(){
+  var fig=$("fig-b"),leg=$("leg-b"),h3=$("h3-b"),badges=$("badges-b");
+  clearNode(leg);
+  if(S.task==="agent"){h3.innerHTML="20-turn resolution vs loop collapse per config "
+    +noteFor(fig,"agent");badges.innerHTML=badge("simulated","simulated harness");
+    renderAgentResolved(fig,leg);return;}
+  if(S.phase==="v2"){
+    if(S.task!=="needle"){
+      h3.innerHTML="v2.0 rescue curves "+noteFor(fig,"rescue");
+      badges.innerHTML=badge("projected","projected");
+      emptyState(fig,"<b>not measured</b> — v2.0 Hadamard / head-adaptive rescue rows exist "
+        +"for <b>needle retrieval only</b> (p10/p11, declared synthetic fixtures). "
+        +"See README §3.4: do not extrapolate beyond the stated fixture.");
+      return;
+    }
+    h3.innerHTML="Cliff rescue — accuracy vs context (Wilson 95% CI bands) "
+      +noteFor(fig,"rescue");
+    badges.innerHTML=badge("projected","projected (replay adapter)")
+      +' <span style="color:var(--faint);font-size:11px">p10 = micro-kv-2k fixture · p11 = bimodal-calibration fixture</span>';
+    drawRescueChart(fig,leg);return;
+  }
+  h3.innerHTML="Accuracy (solid) &amp; ΔlogP (dashed) vs context — contexts within the "
+    +S.budget+" GB envelope "+noteFor(fig,"frontier");
+  badges.innerHTML=badge("replay-baseline","v1.0 baseline")
+    +' <span style="color:var(--faint);font-size:11px">dotted right axis: ΔlogP sensor</span>';
+  drawFrontierChart(fig,leg);
+}
+function ctxPositions(available){
+  var pos={},step=1/(CTXS.length-1),idx={};
+  CTXS.forEach(function(c,i){idx[c[0]]=i;});
+  available.forEach(function(c){pos[c]=idx[c]*step;});
+  return pos;
+}
+function frameGrid(fig,svg,W,H,L,R,T,B,ylo,yhi,ylab){
+  var y=lin(ylo,yhi,H-B,T);
+  for(var i=0;i<=4;i++){
+    var yv=ylo+(yhi-ylo)*i/4,yy=y(yv);
+    el("line",{x1:L,x2:W-R,y1:yy,y2:yy,class:"gridline"},svg);
+    el("text",{x:L-6,y:yy+3,class:"ticktext","text-anchor":"end"},svg).textContent=yv.toFixed(2);
+  }
+  el("text",{x:L-38,y:T+4,class:"xlab"},svg).textContent=ylab;
+  return y;
+}
+function drawFrontierChart(fig,leg){
+  clearNode(fig);
+  var front=D.frontier[S.task]||{},budgetMiB=S.budget*1024;
+  var fit=Object.keys(front).sort().filter(function(c){
+    return Object.keys(front[c]).some(function(ctx){return front[c][ctx].vram_mib<=budgetMiB;});
+  });
+  if(!fit.length){
+    emptyState(fig,"<b>nothing fits</b> — no v1.0 config's theoretical VRAM "
+      +"(p6 <code>theoretical_vram_mib</code>) fits "+S.budget+" GB for this task at any "
+      +"context. Raise the budget, or see the fleet view: paged CoW sharing is how "
+      +"multiple sessions fit at all (p13).");
+    return;
+  }
+  var W=560,H=300,L=52,R=44,T=8,B=30;
+  var svg=el("svg",{viewBox:"0 0 "+W+" "+H,width:"100%"},fig);
+  var pos=ctxPositions(CTXS.map(function(c){return c[0];}));
+  var x=function(c){return 52+pos[c]*(W-L-R);};
+  var ylo=1,yhi=0,dlo=1e9,dhi=-1e9;
+  fit.forEach(function(c){Object.keys(front[c]).forEach(function(ctx){
+    if(front[c][ctx].vram_mib>budgetMiB){return;}
+    ylo=Math.min(ylo,front[c][ctx].acc);yhi=Math.max(yhi,front[c][ctx].acc);
+    dlo=Math.min(dlo,front[c][ctx].dlogp);dhi=Math.max(dhi,front[c][ctx].dlogp);
+  });});
+  ylo=Math.max(0,Math.floor((ylo-0.02)*20)/20);yhi=Math.min(1,Math.ceil((yhi+0.02)*20)/20);
+  var y=frameGrid(fig,svg,W,H,L,R,T,B,ylo,yhi,"acc");
+  var yr=lin(Math.max(0,dlo-0.05),dhi+0.05,H-B,T);
+  CTXS.forEach(function(c){
+    el("text",{x:x(c[0]),y:H-8,class:"ticktext","text-anchor":"middle"},svg).textContent=c[1];
+  });
+  el("text",{x:W-6,y:T+4,class:"xlab","text-anchor":"end"},svg).textContent="ΔlogP";
+  fit.forEach(function(cfg,ci){
+    var pts=[],dpts=[];
+    CTXS.forEach(function(c){
+      var st=front[cfg][c[0]];
+      if(st&&st.vram_mib<=budgetMiB){pts.push([x(c[0]),y(st.acc)]);dpts.push([x(c[0]),yr(st.dlogp)]);}
+    });
+    if(pts.length<2){return;}
+    el("path",{d:linePath(pts),class:"cl l"+(ci%6)},svg);
+    el("path",{d:linePath(dpts),class:"cl l"+(ci%6),"stroke-dasharray":"5 4",opacity:.55},svg);
+    pts.forEach(function(p){el("circle",{cx:p[0],cy:p[1],r:2.2,class:"l"+(ci%6)},svg);});
+    var sw=document.createElement("span");sw.className="k";
+    sw.innerHTML='<span class="sw" style="background:var(--line'+(ci%6)+')"></span>'+esc(cfg)
+      +(cfg.indexOf("k16v16")===0?" (FP16 baseline)":"");
+    leg.appendChild(sw);
+  });
+  fig.appendChild(document.createTextNode(""));
+  var cap=document.createElement("div");cap.style.cssText="color:var(--faint);font-size:11px;padding-top:4px";
+  cap.textContent="solid = acc_mean, dashed = ΔlogP (right axis). VRAM gate uses p6 "
+    +"theoretical_vram_mib, which is a CONTEXT-LENGTH ENVELOPE (identical for every config at a "
+    +"given context in this sweep), not a per-config quantization filter: rows past the budget "
+    +"are dropped for all configs alike.";
+  fig.appendChild(cap);
+}
+function drawRescueChart(fig,leg){
+  clearNode(fig);
+  var order=["fp16","k4v4_postrope","k4v4_hadamard","head_adaptive_4p5_hadamard","k4v4_hadamard_projected"];
+  var cfgs=order.filter(function(c){return D.rescue[c];});
+  var W=560,H=300,L=52,R=44,T=8,B=30;
+  var svg=el("svg",{viewBox:"0 0 "+W+" "+H,width:"100%"},fig);
+  var pos=ctxPositions([4096,16384,32768,65536,131072]);
+  var x=function(c){return L+pos[c]*(W-L-R);};
+  var ylo=1,yhi=0;
+  cfgs.forEach(function(c){Object.keys(D.rescue[c]).forEach(function(ctx){
+    var st=D.rescue[c][ctx];if(st.acc===null){return;}
+    ylo=Math.min(ylo,st.acc);yhi=Math.max(yhi,st.acc);
+  });});
+  ylo=Math.max(0,Math.floor((ylo-0.02)*20)/20);yhi=Math.min(1,Math.ceil((yhi+0.02)*20)/20);
+  var y=frameGrid(fig,svg,W,H,L,R,T,B,ylo,yhi,"acc");
+  [4096,16384,32768,65536,131072].forEach(function(c){
+    el("text",{x:x(c),y:H-8,class:"ticktext","text-anchor":"middle"},svg).textContent=fmtCtx(c);
+  });
+  cfgs.forEach(function(cfg,ci){
+    var ctxs=Object.keys(D.rescue[cfg]).map(Number).sort(function(a,b){return a-b;});
+    var pts=ctxs.filter(function(c){return D.rescue[cfg][c].acc!==null;})
+      .map(function(c){return [x(c),y(D.rescue[cfg][c].acc)];});
+    var st0=D.rescue[cfg][ctxs[0]];
+    if(st0&&st0.lo!==null&&st0.hi!==null){
+      var top=ctxs.filter(function(c){return D.rescue[cfg][c].acc!==null;})
+        .map(function(c){return [x(c),y(D.rescue[cfg][c].hi)];});
+      var bot=ctxs.filter(function(c){return D.rescue[cfg][c].acc!==null;})
+        .map(function(c){return [x(c),y(D.rescue[cfg][c].lo)];});
+      el("path",{d:bandPath(top,bot),class:"band l"+(ci%6)},svg);
+    }
+    var dash=D.rescue[cfg][ctxs[0]]&&D.rescue[cfg][ctxs[0]].source==="p10";
+    el("path",{d:linePath(pts),class:"cl l"+(ci%6),"stroke-dasharray":dash?"6 4":""},svg);
+    pts.forEach(function(p){el("circle",{cx:p[0],cy:p[1],r:2.2,class:"l"+(ci%6)},svg);});
+    var src=D.rescue[cfg][ctxs[0]]?D.rescue[cfg][ctxs[0]].source:"";
+    var sw=document.createElement("span");sw.className="k";
+    sw.innerHTML='<span class="sw" style="background:var(--line'+(ci%6)+')"></span>'+esc(cfg)
+      +(src?' <span style="color:var(--faint)">('+src+')</span>':"");
+    leg.appendChild(sw);
+  });
+  var cap=document.createElement("div");cap.style.cssText="color:var(--faint);font-size:11px;padding-top:4px";
+  cap.textContent="shaded = Wilson 95% CI (p11 rows); dashed line = p10 micro-kv projection. "
+    +"Both fixtures are declared synthetic; neither row is a model forward pass (README §3.4).";
+  fig.appendChild(cap);
+}
+/* ================= agent panels (p14) ================= */
+function renderAgentBars(fig,leg){
+  clearNode(fig);
+  var cfgs=Object.keys(D.agent).sort(),ctxs=D.avail.agent;
+  if(ctxs.indexOf(S.ctx)<0){
+    emptyState(fig,"<b>not measured</b> — the agent harness ran at 32K and 64K only.");
+    return;
+  }
+  var W=560,H=300,L=52,R=10,T=8,B=30;
+  var svg=el("svg",{viewBox:"0 0 "+W+" "+H,width:"100%"},fig);
+  var max=0.02;
+  cfgs.forEach(function(c){max=Math.max(max,D.agent[c][S.ctx].v_schema,D.agent[c][S.ctx].amnesia);});
+  max=Math.ceil(max*25)/25;
+  var y=frameGrid(fig,svg,W,H,L,R,T,B,0,max,"rate");
+  var band=(W-L-R)/cfgs.length;
+  cfgs.forEach(function(cfg,i){
+    var st=D.agent[cfg][S.ctx],cx=L+band*(i+0.5);
+    el("rect",{x:cx-band*0.32,y:y(st.v_schema),width:band*0.28,height:H-B-y(st.v_schema),
+      class:"bar l3",rx:2},svg);
+    el("rect",{x:cx+band*0.04,y:y(st.amnesia),width:band*0.28,height:Math.max(0.5,H-B-y(st.amnesia)),
+      class:"bar l0",rx:2},svg);
+    el("text",{x:cx,y:H-16,class:"ticktext","text-anchor":"middle"},svg).textContent=cfg;
+    el("text",{x:cx,y:H-4,class:"ticktext","text-anchor":"middle",fill:"#f87171"},svg)
+      .textContent=(100*st.v_schema).toFixed(1)+"%";
+  });
+  var k=document.createElement("span");k.className="k";
+  k.innerHTML='<span class="sw" style="background:var(--line3)"></span>V-schema corruption'
+    +'&nbsp;&nbsp;<span class="sw" style="background:var(--line0)"></span>K-amnesia (measured null: 0 everywhere)';
+  leg.appendChild(k);
+  var cap=document.createElement("div");cap.style.cssText="color:var(--faint);font-size:11px;padding-top:4px";
+  cap.textContent="K-amnesia is a controlled null: routing flipped in 6/6,400 turn-records, all inside "
+    +"the 20K-token forgotten-span window (docs/AGENT_FAILURE_MODES.md).";
+  fig.appendChild(cap);
+}
+function renderAgentResolved(fig,leg){
+  clearNode(fig);
+  var cfgs=Object.keys(D.agent).sort();
+  if(D.avail.agent.indexOf(S.ctx)<0){
+    emptyState(fig,"<b>not measured</b> — the agent harness ran at 32K and 64K only.");return;
+  }
+  var W=560,H=300,L=52,R=10,T=8,B=30;
+  var svg=el("svg",{viewBox:"0 0 "+W+" "+H,width:"100%"},fig);
+  var y=frameGrid(fig,svg,W,H,L,R,T,B,0,1,"rate");
+  var band=(W-L-R)/cfgs.length;
+  cfgs.forEach(function(cfg,i){
+    var st=D.agent[cfg][S.ctx],cx=L+band*(i+0.5);
+    el("rect",{x:cx-band*0.32,y:y(st.resolved),width:band*0.28,height:H-B-y(st.resolved),
+      class:"bar l0",rx:2},svg);
+    el("rect",{x:cx+band*0.04,y:y(st.collapsed),width:band*0.28,height:H-B-y(st.collapsed),
+      class:"bar l1",rx:2},svg);
+    el("text",{x:cx,y:H-16,class:"ticktext","text-anchor":"middle"},svg).textContent=cfg;
+    el("text",{x:cx,y:H-4,class:"ticktext","text-anchor":"middle"},svg)
+      .textContent=(100*st.resolved).toFixed(0)+"% resolved";
+  });
+  var k=document.createElement("span");k.className="k";
+  k.innerHTML='<span class="sw" style="background:var(--line0)"></span>resolved'
+    +'&nbsp;&nbsp;<span class="sw" style="background:var(--line1)"></span>loop-collapsed (3-strike abort @ turn 8)';
+  leg.appendChild(k);
+}
+
+/* ================= View 2: fleet cost calculator (p13) ================= */
+function renderFleet(){
+  var fig=$("fig-c"),leg=$("leg-c"),badges=$("badges-c"),h3=$("h3-c"),stats=$("fleet-stats");
+  clearNode(leg);clearNode(stats);
+  h3.innerHTML="Concurrent 20-turn agent sessions @ "+fmtCtx(S.ctx)+", "+S.budget+" GiB budget "
+    +noteFor(fig,"fleet");
+  badges.innerHTML=badge("modeled","modeled (analytical byte model)")
+    +' <span style="color:var(--faint);font-size:11px">model: Qwen2.5-7B geometry; ITL modeled for Llama-2-7b (p7)</span>';
+  var rows=D.fleet.filter(function(f){return f.budget===S.budget&&f.ctx===S.ctx;});
+  if(!rows.length){
+    emptyState(fig,"<b>not measured</b> — p13 fleet rows exist at 32K and 64K only. "
+      +"Switch context; greyed chips are honest absences.");
+    return;
+  }
+  var base=rows.filter(function(r){return r.config==="fp16";})[0];
+  var cow=rows.filter(function(r){return r.config==="fp16_cow";})[0];
+  var best=rows.reduce(function(a,r){return r.sessions>a.sessions?r:a;},rows[0]);
+  var cowRatio=cow?cow.sessions/base.sessions:null;
+  var allRatio=best.sessions/base.sessions;
+  [["FP16 baseline",base.sessions+" sessions","no CoW, no quant — "+fmtGiB(base.used_b)+" GiB at max"],
+   ["Best fit: "+best.config,best.sessions+" sessions",(allRatio).toFixed(1)+"× baseline ("+fmtGiB(best.used_b)+" GiB at max)"],
+   ["CoW alone",cow?(cow.sessions+" sessions").concat(""):"—",
+     cow?("fp16_cow vs fp16 = "+cowRatio.toFixed(2)+"×"):("n/a"),
+     "quant on top of CoW = "+(best.sessions/cow.sessions).toFixed(1)+"× more"]
+  ].forEach(function(card){
+    var d=document.createElement("div");d.className="stat";
+    d.innerHTML='<div class="v">'+esc(card[1])+'</div><div class="k">'+esc(card[0])
+      +'</div><div class="d">'+esc(card[2])+(card[3]?' · '+esc(card[3]):"")+'</div>';
+    stats.appendChild(d);
+  });
+  var stat4=document.createElement("div");stat4.className="stat";
+  // p13's modeled_decode_tok_s is ALREADY fleet-wide across all sessions
+  // (concurrency_sim.py: modeled_tok_s = sessions * 1e6 / step_time).
+  // Multiplying by sessions again would inflate the CSV by 161x-543x.
+  stat4.innerHTML='<div class="v">'+best.tok_s.toFixed(0)
+    +'</div><div class="k">fleet decode tok/s</div><div class="d">'
+    +"p13 modeled — total across all "+best.sessions+" sessions (do not multiply by session count)</div>";
+  stats.appendChild(stat4);
+  clearNode(fig);
+  var W=560,H=210,L=40,R=10,T=10,B=44;
+  var svg=el("svg",{viewBox:"0 0 "+W+" "+H,width:"100%"},fig);
+  var maxS=best.sessions*1.15;
+  var y=lin(0,maxS,H-B,T);
+  var band=(W-L-R)/rows.length;
+  rows.forEach(function(r,i){
+    var cx=L+band*(i+0.5);
+    el("rect",{x:cx-band*0.36,y:y(r.sessions),width:band*0.72,height:H-B-y(r.sessions),
+      class:"bar l"+(r.cow?(r.config==="fp16_cow"?"1":(r.config==="k4v4_hadamard_cow"?"0":"2")):"3"),rx:3},svg);
+    el("text",{x:cx,y:y(r.sessions)-5,class:"ticktext","text-anchor":"middle"},svg)
+      .textContent=r.sessions;
+    el("text",{x:cx,y:H-24,class:"ticktext","text-anchor":"middle"},svg).textContent=r.config.replace("_cow"," +CoW");
+    el("text",{x:cx,y:H-9,class:"ticktext","text-anchor":"middle",fill:"var(--faint)"},svg)
+      .textContent=r.sessions/base.sessions<1.05?"baseline":(r.sessions/base.sessions).toFixed(1)+"×";
+  });
+  var k=document.createElement("span");k.className="k";
+  k.innerHTML='sessions within '+S.budget+' GiB — <span style="color:var(--faint)">ratios vs fp16 no-CoW baseline; '
+    +'CoW alone '+cowRatio.toFixed(2)+'×, quant+CoW '+allRatio.toFixed(1)+'×</span>';
+  leg.appendChild(k);
+  var cap=document.createElement("div");cap.style.cssText="color:var(--faint);font-size:11px;padding-top:4px";
+  cap.textContent="Per-session bytes split (p13 bytes_per_token × ctx, shared prefix deduplicated by CoW):";
+  fig.appendChild(cap);
+  rows.forEach(function(r){
+    var row=document.createElement("div");row.style.cssText="display:flex;align-items:center;gap:8px;margin-top:5px;font-size:11px;color:var(--muted)";
+    var lab=document.createElement("span");lab.style.cssText="width:170px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
+    lab.textContent=r.config;
+    var barwrap=document.createElement("span");
+    barwrap.style.cssText="flex:1;height:10px;border-radius:5px;overflow:hidden;display:flex";
+    var total=(r.shared_b?r.shared_b:0)+r.private_b;
+    if(r.shared_b){
+      var sh=document.createElement("i");sh.style.cssText="background:var(--teal);width:"+(100*r.shared_b/total)+"%";
+      barwrap.appendChild(sh);
+      var pr=document.createElement("i");pr.style.cssText="background:var(--amber);width:"+(100*r.private_b/total)+"%";
+      barwrap.appendChild(pr);
+    }else{
+      var one=document.createElement("i");one.style.cssText="background:var(--red);width:100%";
+      barwrap.appendChild(one);
+    }
+    row.appendChild(lab);row.appendChild(barwrap);
+    var val=document.createElement("span");val.textContent=fmtMiB(total)+" MiB"+(r.shared_b?" (shared teal + private amber)":" (no CoW)");
+    row.appendChild(val);
+    fig.appendChild(row);
+  });
+}
+/* ================= View 3: QuantConfig snippet ================= */
+function sha12(file){
+  var a=(D.meta.artifacts||[]).filter(function(x){return x.file===file;})[0];
+  return a?a.sha256.slice(0,12):"";
+}
+function fleetRow(cfgName){
+  return D.fleet.filter(function(f){return f.budget===S.budget&&f.ctx===S.ctx&&f.config===cfgName;})[0];
+}
+function recommend(){
+  var r={k:8,v:4,scope:"none",conc:"k8v4_cow",mode:"v1",why:[]};
+  if(S.task==="agent"){
+    r={k:4,v:8,scope:"none",conc:null,mode:"agent",
+      why:["p14 (simulated): K is a measured null — 6/6,400 route flips, all inside the 20K window",
+           "V precision decides sessions: K4V8 resolves 100%, K8V4 only 71.9% @ 64K, same bit budget"]};
+    return r;
+  }
+  if(S.phase==="v2"){
+    if(S.budget<=24){
+      r={k:4,v:4,scope:"block_diag",conc:"k4v4_hadamard_cow",mode:"density",
+        why:["p10/p11 (projected): block-diagonal Hadamard rescues INT4-K — 0.8455 -> 0.9652 @ 32K",
+             "max density: 4.0 bits/elem, 3.95x VRAM compression (p7_vram_crossval)"]};
+    }else{
+      r={k:8,v:4,scope:"block_diag",conc:"k8v4_cow",mode:"quality",
+        why:["p11 (projected): head-adaptive tier — top 25% retrieval heads stay K8V4, streaming heads drop to K4V4",
+             "quantized append pays +0.36 ms TTFT, amortizes in 0.06 decode steps (p7_latency)"]};
+    }
+    return r;
+  }
+  r.why=["p6 (v1.0): K8V4 within 0.22-0.36% of FP16 @64K, up to 0.43% rel @128K multihop",
+         "p4: unrotated INT4-K is the AVOID row — the v2.0 toggle exists because of it"];
+  return r;
+}
+function renderSnippet(){
+  var pre=$("snip"),warn=$("snip-warn"),ok=$("snip-ok"),h3=$("h3-d"),badges=$("badges-d");
+  var rec=recommend(),task=S.task;
+  h3.innerHTML="QuantConfig for "+(TASKS.filter(function(t){return t[0]===task;})[0][1])
+    +" @ "+fmtCtx(S.ctx)+" ("+S.budget+" GB) "+'<span style="color:var(--faint);text-transform:none;letter-spacing:0">one-click, cited, compile-checked</span>';
+  badges.innerHTML=badge(rec.mode==="v1"?"replay-baseline":(rec.mode==="agent"?"simulated":"projected"),
+    rec.mode==="v1"?"v1.0 baseline rows":(rec.mode==="agent"?"simulated harness":"v2.0 projections"));
+  var fr=rec.conc?fleetRow(rec.conc):null;
+  var lines=[
+    "# kv-quant v2.0.0 explorer snippet — "+task+" @ "+fmtCtx(S.ctx)+", "+S.budget+" GiB budget",
+    "# Every number below traces to a SHA256-verified CSV:",
+    "#   p6_v1_frontier_sweep.csv       #"+sha12("p6_v1_frontier_sweep.csv")+"  (v1.0 frontier)",
+    "#   p13_ragged_concurrency.csv     #"+sha12("p13_ragged_concurrency.csv")+"  (modeled fleet)",
+    "#   p14_agent_trajectory_drift.csv #"+sha12("p14_agent_trajectory_drift.csv")+"  (simulated agent)",
+    "from kv_quant.config import QuantConfig",
+    "",
+    "cfg = QuantConfig(",
+    "    k_bits="+rec.k+",          # "+rec.why[0],
+    "    v_bits="+rec.v+",          # "+rec.why[1]
+  ];
+  if(rec.scope==="block_diag"){
+    lines.push("    hadamard_scope=\"block_diag\",   # rotary subspace only (rotary_dim=128)");
+    lines.push("    rotary_dim=128,");
+    lines.push("    # NOTE: apply the rotation via hadamard.rotate_qk(q, k) BEFORE quantizing");
+    lines.push("    # keys. Do NOT set the legacy use_hadamard=True flag (known Q/K sign");
+    lines.push("    # mismatch, DECISIONS.md ADR-012 / KERNEL_NOTES.md). Consequently");
+    lines.push("    # cfg.resolve_hadamard_scope() reports 'none' on this config by design:");
+    lines.push("    # the rotation is applied explicitly, not through that flag.");
+  }
+  lines.push("    k_scheme=\"sym\",          # keys: symmetric, routing-safe");
+  lines.push("    v_scheme=\"asym\",         # values: asymmetric range");
+  lines.push("    k_quant_stage=\"post_rope\",");
+  lines.push("    group_size=64,          # matches HybridPagedKVCache sealing granularity");
+  lines.push("    sink_tokens=4,          # FP16 anchors; removing them costs 0.96 pts @ 64K (p6)");
+  lines.push(")");
+  lines.push("# Serving-side knobs live on OTHER dataclasses (kv_quant.config):");
+  lines.push("#   CacheConfig(device=\"cuda\", pin_memory=True)   # device placement");
+  if(fr){
+    lines.push("#   BenchConfig(concurrency="+fr.sessions+")              # p13: "+rec.conc
+      +" fits "+fr.sessions+" sessions @ "+S.budget+" GiB, "+fmtCtx(S.ctx)+" ctx (modeled)");
+  }else{
+    lines.push("#   BenchConfig(concurrency=...)  # no p13 fleet row for this family; see fleet view");
+  }
+  pre.textContent=lines.join("\n");
+  warn.innerHTML=(S.phase==="v1"&&S.ctx>=65536)
+    ?"AVOID unrotated INT4-K here: at this context the v1.0 cliff config (k4v4 post-RoPE, "
+    +"no rotation) loses 14.8 pts @ 32K and 21.8 pts @ 64K on needle (p4). Flip the phase "
+    +"toggle to v2.0 to rotate keys first."
+    :(rec.mode==="density"||rec.mode==="quality"
+      ?"v2.0 rescue rows are <b>projections</b> from declared synthetic fixtures "
+      +"(p10 micro-kv-2k, p11 bimodal-calibration) — not model forward passes. "
+      +"Do not quote them as measurements (README §3.4)."
+      :(rec.mode==="agent"
+        ?"Agent rows are a <b>simulated</b> harness driven by measured quantizer error "
+        +"— no LLM ran on the host (ADR-012)."
+        :""));
+  warn.style.display=warn.innerHTML?"block":"none";
+  ok.textContent="Snippet is compile-checked and instantiated against the real QuantConfig "
+    +"in CI (tests/test_explorer.py::test_snippet_compiles_against_real_config).";
+  var btn=$("copy");
+  btn.onclick=function(){
+    navigator.clipboard.writeText(pre.textContent).then(function(){
+      btn.textContent="copied ✓";setTimeout(function(){btn.textContent="copy";},1400);
+    });
+  };
+}
+
+buildControls();
+refresh();
+}).call(this);
+</script>
+</body>
+</html>
