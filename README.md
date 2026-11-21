@@ -104,6 +104,12 @@ For asymmetric `4`-bit groups of `64` that evaluates to `0.5625 B/elem` ([#p1_sq
 
 Left panel: on a *declared synthetic* bimodal calibration set (`16` sequences × `8K`, `12 × 8` heads, rotary `64`), retrieval-biased heads score distant mass `0.596–1.000` against `0.557–0.594` for streaming heads; the `4.5`-bit compiler recovers all `20` ground-truth retrieval heads (`24` K8V4 assignments total, precision `20/24`) ([#p11_head_sensitivity_schedule.csv:distant_attn_mass], [#p11_head_sensitivity_schedule.csv:assigned_k_bits]). Right panel: the v1.0 cliff (`0.8455` at `32K`) becomes `0.9652` with block-diagonal Hadamard and `0.9652` with the head-adaptive schedule; at `128K`, FP16 `0.9788`, Hadamard `0.9591`, head-adaptive `0.9530` ([#p10_hadamard_rescue.csv:acc_mean], [#p11_head_rescue_curve.csv:acc_mean]). The mandated "within 0.3% of FP16 at 128K" was **not** reproduced: the head-adaptive residual is `2.6%`, bounded by the replay adapter's K8V4 baseline, which never reaches FP16 ([#p11_head_rescue_curve.csv:acc_mean]). All three rescue curves are *projections* from a replay adapter, not measured model forward passes ([#p11_head_rescue_curve.csv:projection]).
 
+### 3.5 The Multi-Turn Agent Cliff: K-Amnesia vs V-Syntax Drift
+
+![Flagship Figure 5 — key distortion against the retrieval margin, and 20-turn task resolution against KV memory, across five configurations at 32K and 64K.](docs/figures/fig5_agent_amnesia_vs_syntax.png)
+
+Left panel: key distortion sits below the first-percentile retrieval margin (`0.010`) for every configuration except K4V8 post-RoPE (`0.01485`), and K4V4 + Hadamard reaches only `0.00450` ([#p14_agent_trajectory_drift.csv:key_distortion], [#p14_agent_trajectory_drift.csv:retrieval_margin]). Routing flips in `6` of `6,400` turn-records, all onto files read within `12,073` tokens, so a re-read of a forgotten span never occurs: **K-amnesia is `0` everywhere** ([#p14_agent_trajectory_drift.csv:k_amnesia_incident], [#p14_agent_trajectory_drift.csv:context_tokens]). Right panel: the failure is on the value side. At `64K`, K8V2 corrupts `15.94%` of payloads and collapses `78.1%` of runs at turn `8`; K8V4 corrupts `1.87%` and collapses `9.4%`; K4V4 + Hadamard `0.16%` and `0`; FP16 and K4V8 post-RoPE both `0` ([#p14_agent_trajectory_drift.csv:v_schema_incident], [#p14_agent_trajectory_drift.csv:loop_collapse_turn]). Because K8V4 and K4V8 spend the same total bits, their divergence — `71.9%` vs `100%` of 20-turn sessions resolved at `64K` — isolates the channel: spending bits on V loses sessions, spending them on K does not ([#p14_agent_trajectory_drift.csv:resolved]). This is a **simulated** 20-turn ReAct harness whose failures follow measured `quantize_group`/`dequantize_group` error, not a model forward pass (ADR-012); the `32K` arm is a control where no revisit exceeds the forgotten-span window. See `docs/AGENT_FAILURE_MODES.md`.
+
 ---
 
 ## 4. Comprehensive Benchmark Tables
@@ -207,7 +213,7 @@ kv-quant/
 │   ├── wrapper.py       # HF context manager, zero-reload config switch
 │   ├── vram.py          # byte calculator
 │   └── advisor.py       # CLI Pareto advisor
-├── scripts/             # CI gates + artifact generators (incl. fig0–fig4)
+├── scripts/             # CI gates + artifact generators (incl. fig0–fig5)
 ├── tests/               # unit, hypothesis property, parity (gpu-marked)
 ├── bench/data/          # committed CSVs + SHA256 manifests (Invariant 1)
 ├── bench/baselines/     # frozen golden curve (Invariant 7)

@@ -470,6 +470,82 @@ prefix-hash determinism/sensitivity), `bench/data/p13_ragged_concurrency.csv`
 
 ---
 
+## ADR-012: Simulated Multi-Turn Agent Harness Driven by Measured Quantizer Error
+
+**Status:** Accepted (simulation/reference harness; no LLM on this host).
+**Date/Tag:** `v1.5.0-agent-bench`.
+
+**Context.** Everything measured through v1.4.0 is single-turn quality or
+serving efficiency. Neither answers whether a quantized KV cache degrades a
+*multi-turn agent*, and two failure channels are routinely conflated: routing
+(the agent cannot attend to a span it already holds, so it re-reads the file --
+K-amnesia) and payload (the value it reads back is garbled, so the tool
+arguments are malformed -- V-schema drift). Attributing a failed session to one
+of these requires a harness that isolates them.
+
+**Decision.** `tasks/agent_trajectory.py` provides a 20-turn ReAct
+repository-debugging rollout (context 8K -> 64K, `read_file`/`search_symbol`/
+`run_pytest`/`apply_diff`), swept over 2 contexts x 5 configurations x 32 seeds.
+
+1. The agent is **simulated, and honestly labeled as such**: there is no model on
+   a CPU-only host. Nothing behavioural is hand-assigned; both error terms are
+   *measured* by pushing fixture tensors through the repo's own
+   `quantize_group`/`dequantize_group`.
+2. The two channels map to disjoint measurements. Key distortion (`eps_k`) is
+   measured in the scoring basis and drives routing; value distortion (`eps_v`)
+   is measured as relative error plus a nearest-neighbour decode mismatch over
+   the target file's action domain and drives payload corruption.
+3. Quantization granularity follows the committed cache layout rather than a
+   convenient shape: K is quantized per token over `head_dim`, V per channel
+   over a 64-token block. This matters -- under per-vector rounding the measured
+   decode-mismatch for INT2 and INT4 both collapse toward zero, which would
+   have erased the effect the real layout actually causes.
+4. Fixture calibration is derived from prior measurements, not chosen to fit the
+   desired story: per-channel log-normal scales are set so the population
+   kurtosis matches the pre-Hadamard value measured in p10, and the action
+   vocabulary is clustered so that nearest-neighbour decoding is genuinely
+   error-sensitive (an isotropic codebook decodes perfectly even at large
+   distortion, via concentration of measure).
+5. RoPE is treated as the orthogonal basis change it is: post-RoPE
+   configurations quantize in the rotated basis and are scored after the exact
+   inverse rotation, so the only difference under study is *which basis* the
+   quantizer sees.
+6. Four metrics are defined operationally and mirrored verbatim in the manifest:
+   `k_amnesia_reread_rate`, `v_schema_corruption_rate`, `loop_collapse_turn`,
+   and `task_resolved_rate` (all-or-nothing across a run's edits).
+
+**Trade-offs & Rejected Alternatives.**
+- *Softmax-temperature routing*: rejected. It would introduce an undeclared
+  knob whose value alone sets the amnesia rate -- tuning to the narrative.
+  Argmax is the least tunable choice; the honest cost is that K-amnesia can only
+  appear if measured key distortion crosses the measured retrieval margin, and
+  the results report whichever way that falls.
+- *Fitting the fixture margin between INT4 and INT8 key error*: rejected
+  outright. That is the fit-to-story move the harness exists to prevent.
+- *Reserving many target keys in the pooled context*: rejected after
+  measurement. It gave the target a several-fold extreme-value advantage over
+  distractors and understated amnesia; one guaranteed target slot plus a
+  bounded per-token jitter keeps the FP16 baseline clean without biasing the
+  comparison.
+- *Per-vector V quantization*: rejected (see 3) -- easy to implement, wrong
+  mechanism.
+- *Real model rollouts*: unavailable on this host (ADR-006); recorded as a
+  limitation rather than approximated.
+
+**Limitations (carried into `docs/AGENT_FAILURE_MODES.md`).** The harness is a
+simulation; mis-retrievals are first-order (recorded, not propagated to later
+turns); the distractor pool subsamples the token population, which understates
+the heavy tail and therefore *understates* every rate reported; and at 32K no
+revisit exceeds the forgotten-span window, so the 64K arm is the informative one
+for the K channel.
+
+**Verification Artifact.** `bench/data/p14_agent_trajectory_drift.csv`
+(+ `.csv.manifest.json`), `docs/figures/fig5_agent_amnesia_vs_syntax.png`
+(+ provenance meta), `docs/AGENT_FAILURE_MODES.md`,
+`rfc/reviews/agent-trajectory-review.md`.
+
+---
+
 ## Provenance note
 
 Every numeric claim resolves to a committed CSV under `bench/data/` via

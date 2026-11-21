@@ -1,0 +1,18 @@
+{
+  "generating_script": "scripts/generate_phase14_artifacts.py",
+  "source_csvs": [
+    "bench/data/p14_agent_trajectory_drift.csv"
+  ],
+  "csv_hashes": [
+    "ebae3e9f92950440d05f87d26b5a9ad03d4dbd27dfbd2e8d0809b805ab2c8465"
+  ],
+  "width_px": 4456,
+  "height_px": 1327,
+  "dpi": 300,
+  "panels": [
+    "A1: per-turn key distortion vs the minimum observed retrieval margin",
+    "A2: per-turn K-amnesia (solid) and V-schema (dashed) incidence at 64K",
+    "B: 20-turn resolution rate vs KV MiB per session at 32K/64K"
+  ],
+  "memory_model": "kv_quant.layout.bytes_per_element at 32 layers x 4 KV heads x 128 head_dim"
+}

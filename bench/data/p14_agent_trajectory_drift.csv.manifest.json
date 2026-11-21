@@ -1,0 +1,44 @@
+{
+  "git_sha": "207fbf7187571b07b8aae0e4eb9e2305876aca39",
+  "timestamp_utc": "2026-11-21T05:14:32.522992+00:00",
+  "model_id": "Qwen/Qwen2.5-7B-Instruct",
+  "param_count_b": 7.61,
+  "num_q_heads": 28,
+  "num_kv_heads": 4,
+  "rotary_dim": 128,
+  "gpu_name": "cpu-only-ci",
+  "seed": 42,
+  "sha256_csv": "ebae3e9f92950440d05f87d26b5a9ad03d4dbd27dfbd2e8d0809b805ab2c8465",
+  "extra": {
+    "description": "20-turn agentic trajectory: K-amnesia vs V-schema drift",
+    "mode": "simulated (no LLM/GPU on host); behaviour driven by measured quantizer error",
+    "turns": 20,
+    "seeds": 32,
+    "rows": 6400,
+    "fixture_kurtosis": 14.627,
+    "channel_sigma": 1.25,
+    "codebook_spread": 0.06,
+    "slot_vocab": 32,
+    "distractor_sample": 256,
+    "target_keys_reserved": 1,
+    "token_jitter_norm": 0.05,
+    "amnesia_age_tokens": 20000,
+    "k_quant_granularity": "per-token over head_dim",
+    "v_quant_granularity": "per-channel over a 64-token block (cache layout)",
+    "isolation": "first-order: a mis-retrieval is recorded but not propagated to later turns",
+    "trajectory": "20-turn ReAct script over 24 files with 6 backtracking revisits",
+    "tools": [
+      "read_file",
+      "search_symbol",
+      "run_pytest",
+      "apply_diff"
+    ],
+    "metric_definitions": {
+      "k_amnesia_reread_rate": "fraction of turns where quantized retrieval selects a file other than the scripted target and the selected file was last read >20000 tokens earlier (a re-read of a forgotten span)",
+      "v_schema_corruption_rate": "fraction of turns where any emitted payload slot decodes to the wrong symbol (6 slots sampled on the 5 apply_diff turns)",
+      "loop_collapse_turn": "first turn at which a file has been visited 3 times and at least one of those visits produced an unparseable payload; -1 if the run never collapsed",
+      "task_resolved_rate": "fraction of runs with no corrupted payload on any apply_diff turn and no loop collapse"
+    },
+    "subsample": "256 sampled token keys/turn (1:256 of 64K); tail understated, so rates are conservative"
+  }
+}
